@@ -13,15 +13,20 @@ module storebuf
    input wire [`SPECTAG_LEN-1:0] stspectag,
    input wire [`DATA_LEN-1:0] 	 stdata,
    input wire [`ADDR_LEN-1:0] 	 staddr,
+   input wire [`MEM_TYPE_WIDTH-1:0] 					 stfunct3,
    input wire 			 stcom,
    output wire 			 stretire, //dmem_we
    output wire [`DATA_LEN-1:0] 	 retdata,
    output wire [`ADDR_LEN-1:0] 	 retaddr,
+   output wire [`MEM_TYPE_WIDTH-1:0] 				 retfunct3,
    input wire 			 memoccupy_ld,
    output wire 			 sb_full,
    //ReadSigs
+   input wire[1:0] dmem_w_done,
+   input wire cache_busy,
    input wire [`ADDR_LEN-1:0] 	 ldaddr,
    output wire [`DATA_LEN-1:0] 	 lddata,
+   output wire [`MEM_TYPE_WIDTH-1:0]    ldfunct3,
    output wire 			 hit
    );
 
@@ -33,8 +38,9 @@ module storebuf
    reg [`STBUF_ENT_NUM-1:0] 	 completed;
    reg [`STBUF_ENT_NUM-1:0] 	 valid;
    reg [`STBUF_ENT_NUM-1:0] 	 specbit;
-   reg [`DATA_LEN-1:0] 		 data [0:`STBUF_ENT_NUM-1];
-   reg [`ADDR_LEN-1:0] 		 addr [0:`STBUF_ENT_NUM-1];
+   reg [`DATA_LEN-1:0] 			 data [0:`STBUF_ENT_NUM-1];
+   reg [`ADDR_LEN-1:0] 			 addr [0:`STBUF_ENT_NUM-1];
+   reg [`MEM_TYPE_WIDTH-1:0] 	 funct3 [0:`STBUF_ENT_NUM-1];
 
    //when prsuccess, specbit_next = specbit & specbitcls
    wire [`STBUF_ENT_NUM-1:0] 	 specbit_cls;
@@ -82,9 +88,10 @@ module storebuf
    
    assign retdata = data[retptr];
    assign retaddr = addr[retptr];
+   assign retfunct3 = funct3[retptr];
    assign lddata = data[ldent];
-   assign stretire = valid[retptr] && completed[retptr] && ~memoccupy_ld &&
-		     ~prmiss;
+   assign ldfunct3 = funct3[ldent];
+   assign stretire = valid[retptr] && completed[retptr] && ~(dmem_w_done[1]) && ~prmiss;
    assign sb_full = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
    assign finptr_next = (~notfull_next | ~notempty_next) ? finptr :
 			(((nb1 == 0) && (ne1 == `STBUF_ENT_NUM-1)) ? nb0 : (ne1+1));
@@ -107,6 +114,7 @@ module storebuf
       if (~reset & stfin) begin
 	 data[finptr] <= stdata;
 	 addr[finptr] <= staddr;
+	 funct3[finptr] <= stfunct3;
 	 spectag[finptr] <= stspectag;
       end
    end
@@ -142,13 +150,23 @@ module storebuf
 	    comptr <= comptr + 1;
 	    completed[comptr] <= 1'b1;
 	 end
-	 if (stretire) begin
+
+     //if (dcache.cpu_res_ready) begin
+	 if (dmem_w_done[1]) begin
 	    retptr <= retptr + 1;
 	    valid[retptr] <= 1'b0;
 	    completed[retptr] <= 1'b0;
 	 end
       end
    end // always @ (posedge clk)
+/*
+   always @ (posedge stretire) begin
+    st_start <= 1;
+   end
+
+   always @ (posedge dmem_w_done) begin
+    st_start <= 0;
+   end*/
 
    always @ (posedge clk) begin
       if (reset | prmiss) begin

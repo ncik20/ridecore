@@ -22,6 +22,8 @@ module search_begin #(
    end
    
 endmodule // search_from_top
+			 // 注意！in[i]=1后，并不会跳出for循环，会找到最后一个in[i]=1的i
+			 // 所以是从高位开始找，低位符合的
 
 module search_end #(
 		    parameter ENTSEL = 2,

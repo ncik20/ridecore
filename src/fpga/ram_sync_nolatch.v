@@ -119,10 +119,12 @@ module ram_sync_nolatch_4r2w #(
     input wire [BRAM_ADDR_WIDTH-1:0]  raddr2,
     input wire [BRAM_ADDR_WIDTH-1:0]  raddr3,
     input wire [BRAM_ADDR_WIDTH-1:0]  raddr4,
+    input wire [BRAM_ADDR_WIDTH-1:0]  raddr4test,
     output wire [BRAM_DATA_WIDTH-1:0] rdata1,
     output wire [BRAM_DATA_WIDTH-1:0] rdata2,
     output wire [BRAM_DATA_WIDTH-1:0] rdata3,
     output wire [BRAM_DATA_WIDTH-1:0] rdata4,
+    output wire [BRAM_DATA_WIDTH-1:0] rdata4test,
     input wire [BRAM_ADDR_WIDTH-1:0]  waddr1,
     input wire [BRAM_ADDR_WIDTH-1:0]  waddr2,
     input wire [BRAM_DATA_WIDTH-1:0]  wdata1,
@@ -137,6 +139,7 @@ module ram_sync_nolatch_4r2w #(
    assign rdata2 = mem[raddr2];
    assign rdata3 = mem[raddr3];
    assign rdata4 = mem[raddr4];
+   assign rdata4test = mem[raddr4test];
    
    always @ (posedge clk) begin
       if (we1)

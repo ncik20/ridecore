@@ -6,14 +6,23 @@
 
 module pipeline
   (
-   input wire 			clk,
-   input wire 			reset,
-   output reg [`ADDR_LEN-1:0] 	pc,
-   input wire [4*`INSN_LEN-1:0] idata,
-   output wire [`DATA_LEN-1:0] 	dmem_wdata,
-   output wire 			dmem_we,
-   output wire [`ADDR_LEN-1:0] 	dmem_addr,
-   input wire [`DATA_LEN-1:0] 	dmem_data
+   input wire 			            clk,
+   input wire 			            reset,
+   output reg  [`ADDR_LEN-1:0] 	    pc,
+   input wire  [4*`INSN_LEN-1:0]    idata,
+
+   output wire [1:0]			    dmem_we,
+   output wire [`ADDR_LEN-1:0] 	    dmem_addr,
+   output wire [15:0]               dmem_byteenable,
+   output wire [4*`DATA_LEN-1:0]    dmem_wdata,
+   input wire  [4*`DATA_LEN-1:0] 	dmem_data,
+   input wire                       dmem_done,
+
+   input wire                       icache_done,
+   input wire                       icache_busy,
+
+   input wire [4:0] raddr4test,
+   output wire [31:0] rdata4test
    );
    wire  stall_IF;
    wire  kill_IF;
@@ -58,7 +67,7 @@ module pipeline
    wire [`ALU_OP_WIDTH-1:0]    alu_op_1;
    wire [`RS_ENT_SEL-1:0]      rs_ent_1;
    wire [2:0] 		       dmem_size_1;
-   wire [`MEM_TYPE_WIDTH-1:0]  dmem_type_1;			  
+   wire [`MEM_TYPE_WIDTH-1:0]  dmem_type_1;
    wire [`MD_OP_WIDTH-1:0]     md_req_op_1;
    wire 		       md_req_in_1_signed_1;
    wire 		       md_req_in_2_signed_1;
@@ -77,7 +86,7 @@ module pipeline
    wire [`ALU_OP_WIDTH-1:0] 	alu_op_2;
    wire [`RS_ENT_SEL-1:0] 	rs_ent_2;
    wire [2:0] 			dmem_size_2;
-   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2;			  
+   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2;
    wire [`MD_OP_WIDTH-1:0] 	md_req_op_2;
    wire 			md_req_in_1_signed_2;
    wire 			md_req_in_2_signed_2;
@@ -108,7 +117,7 @@ module pipeline
    reg [`ALU_OP_WIDTH-1:0] 	alu_op_1_id;
    reg [`RS_ENT_SEL-1:0] 	rs_ent_1_id;
    reg [2:0] 			dmem_size_1_id;
-   reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_1_id;			  
+   reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_1_id;
    reg [`MD_OP_WIDTH-1:0] 	md_req_op_1_id;
    reg 				md_req_in_1_signed_1_id;
    reg 				md_req_in_2_signed_1_id;
@@ -127,7 +136,7 @@ module pipeline
    reg [`ALU_OP_WIDTH-1:0] 	alu_op_2_id;
    reg [`RS_ENT_SEL-1:0] 	rs_ent_2_id;
    reg [2:0] 			dmem_size_2_id;
-   reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2_id;			  
+   reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2_id;
    reg [`MD_OP_WIDTH-1:0] 	md_req_op_2_id;
    reg 				md_req_in_1_signed_2_id;
    reg 				md_req_in_2_signed_2_id;
@@ -294,6 +303,7 @@ module pipeline
    wire [`DATA_LEN-1:0]        ex_src2_ldst;
    wire [`ADDR_LEN-1:0]        pc_ldst;
    wire [`DATA_LEN-1:0]        imm_ldst;
+   wire [`MEM_TYPE_WIDTH-1:0]  funct3_ldst;
    wire [`RRF_SEL-1:0] 	       rrftag_ldst;
    wire 		       dstval_ldst;
    wire [`SPECTAG_LEN-1:0]     spectag_ldst;
@@ -387,26 +397,24 @@ module pipeline
    wire 		       kill_speculative_ldst;
    wire 		       busy_next_ldst;
 
-   //wire [`DATA_LEN-1:0]        dmem_data;
-   /*
-   wire [`DATA_LEN-1:0]        dmem_wdata;
-   wire 		       dmem_we;
-   wire [`ADDR_LEN-1:0]        dmem_addr;
-    */
    wire 		       sb_full;
    wire 		       hitsb;
    wire 		       memoccupy_ld;
    wire [`ADDR_LEN-1:0]        ldaddr;
+   wire [`ADDR_LEN-1:0]        staddr;
    wire [`DATA_LEN-1:0]        lddatasb;
+   wire [`MEM_TYPE_WIDTH-1:0]  ldfunct3;
    wire [`ADDR_LEN-1:0]        retaddr;
    wire [`DATA_LEN-1:0]        storedata;
    wire [`ADDR_LEN-1:0]        storeaddr;
-   wire 		       stfin;
+   wire 		               stfin;
+   wire                        stretire;
    
    reg [`DATA_LEN-1:0] 	       buf_ex_src1_ldst;
    reg [`DATA_LEN-1:0] 	       buf_ex_src2_ldst;
    reg [`ADDR_LEN-1:0] 	       buf_pc_ldst;
    reg [`DATA_LEN-1:0] 	       buf_imm_ldst;
+   reg [`MEM_TYPE_WIDTH-1:0]   buf_funct3_ldst;
    reg [`RRF_SEL-1:0] 	       buf_rrftag_ldst;
    reg 			       buf_dstval_ldst;
    reg [`SPECTAG_LEN-1:0]      buf_spectag_ldst;
@@ -434,6 +442,7 @@ module pipeline
    wire 		       prsuccess;
    wire [`ADDR_LEN-1:0]        jmpaddr;
    wire [`ADDR_LEN-1:0]        jmpaddr_taken;
+   reg  [`ADDR_LEN-1:0]        jmpaddr_latch;
    wire 		       brcond;
    wire [`SPECTAG_LEN-1:0]     tagregfix;
    
@@ -471,26 +480,59 @@ module pipeline
    wire 		   brcond_combranch;
    wire 		   combranch;
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
-   
+	
+	//reg  pc_change_busy;
+	//reg  icache_busy_real;
+	//wire read_cache;
+
+    
+    wire dcache_busy;
+    reg dcache_r_req;
+    reg dcache_w_req;
+
+    wire avm_m0_write;
+    wire avm_m0_read;
+    wire [1:0]cpu_res_ready;
+    wire [4*`DATA_LEN-1:0] cpu_res_data;
+    wire [`DATA_LEN-1:0] retdata;
+    wire [`MEM_TYPE_WIDTH-1:0] retfunct3;
+    
+    wire idata_ok;
+    wire ddata_ok;
+    reg  jmpaddr_is_latch;
+    reg  req_enable;
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
-   assign stall_IF = stall_ID | stall_DP;
+   assign idata_ok = icache_done & icache_busy;
+   assign ddata_ok = cpu_res_ready && dcache_busy;
+   assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss;
    
    always @ (posedge clk) begin
+	
+      jmpaddr_is_latch <= jmpaddr_is_latch;
+      jmpaddr_latch <= jmpaddr_latch;
+
       if (reset) begin
-	 pc <= `ENTRY_POINT;
-      end else if (prmiss) begin
-	 pc <= jmpaddr;
+		 pc <= `ENTRY_POINT;
+	     jmpaddr_is_latch <= 1'b0;
+      end else if (jmpaddr_is_latch && idata_ok) begin
+		 pc <= jmpaddr_latch;
+         jmpaddr_is_latch <= 1'b0; 
+      end else if (prmiss && idata_ok) begin
+		 pc <= jmpaddr;
+      end else if (prmiss && !jmpaddr_is_latch) begin
+         jmpaddr_latch <= jmpaddr;
+         jmpaddr_is_latch <= 1'b1;
       end else if (stall_IF) begin
-	 pc <= pc;
+		 pc <= pc;
       end else begin
-	 pc <= npc;
+         pc <= npc;
       end
    end
-
-   
+	
    pipeline_if pipe_if(
 		       .clk(clk),
 		       .reset(reset),
@@ -515,26 +557,27 @@ module pipeline
 		       );
 
    always @ (posedge clk) begin
-      if (reset | kill_IF) begin
-	 prcond_if <= 0;
-	 npc_if <= 0;
-	 pc_if <= 0;
-	 inst1_if <= 0;
-	 inst2_if <= 0;
-	 inv1_if <= 1;
-	 inv2_if <= 1;
-	 bhr_if <= 0;
-	 
+      if (reset | kill_IF | jmpaddr_is_latch) begin
+	    prcond_if <= 0;
+	    npc_if <= 0;
+	    pc_if <= 0;
+	    inst1_if <= 0;
+	    inst2_if <= 0;
+	    inv1_if <= 1;
+	    inv2_if <= 1;
+	    bhr_if <= 0;
       end else if (~stall_IF) begin
-	 prcond_if <= prcond;
-	 npc_if <= npc;
-	 pc_if <= pc;
-	 inst1_if <= inst1;
-	 inst2_if <= inst2;
-	 inv1_if <= 0;
-	 inv2_if <= invalid2_pipe;
-	 bhr_if <= bhr;
-	 
+	    prcond_if <= prcond;
+	    npc_if <= npc;
+	    pc_if <= pc;
+	    inst1_if <= inst1;
+	    inst2_if <= inst2;
+	    inv1_if <= 0;
+	    inv2_if <= invalid2_pipe;
+	    bhr_if <= bhr;
+      end else if (~stall_ID) begin
+        inv1_if <= 1;
+        inv2_if <= 1;
       end
    end // always @ (posedge clk)
 
@@ -627,7 +670,7 @@ module pipeline
 	 alu_op_1_id <= 0;
 	 rs_ent_1_id <= 0;
 	 dmem_size_1_id <= 0;
-	 dmem_type_1_id <= 0;			  
+	 dmem_type_1_id <= 0;
 	 md_req_op_1_id <= 0;
 	 md_req_in_1_signed_1_id <= 0;
 	 md_req_in_2_signed_1_id <= 0;
@@ -645,7 +688,7 @@ module pipeline
 	 alu_op_2_id <= 0;
 	 rs_ent_2_id <= 0;
 	 dmem_size_2_id <= 0;
-	 dmem_type_2_id <= 0;			  
+	 dmem_type_2_id <= 0;
 	 md_req_op_2_id <= 0;
 	 md_req_in_1_signed_2_id <= 0;
 	 md_req_in_2_signed_2_id <= 0;
@@ -685,7 +728,7 @@ module pipeline
 	 alu_op_1_id <= alu_op_1;
 	 rs_ent_1_id <= inv1_if ? 0 : rs_ent_1;
 	 dmem_size_1_id <= dmem_size_1;
-	 dmem_type_1_id <= dmem_type_1;			  
+	 dmem_type_1_id <= dmem_type_1;
 	 md_req_op_1_id <= md_req_op_1;
 	 md_req_in_1_signed_1_id <= md_req_in_1_signed_1;
 	 md_req_in_2_signed_1_id <= md_req_in_2_signed_1;
@@ -703,7 +746,7 @@ module pipeline
 	 alu_op_2_id <= alu_op_2;
 	 rs_ent_2_id <= (inv2_if | (prcond_if & isbranch1)) ? 0 : rs_ent_2;
 	 dmem_size_2_id <= dmem_size_2;
-	 dmem_type_2_id <= dmem_type_2;			  
+	 dmem_type_2_id <= dmem_type_2;
 	 md_req_op_2_id <= md_req_op_2;
 	 md_req_in_1_signed_2_id <= md_req_in_1_signed_2;
 	 md_req_in_2_signed_2_id <= md_req_in_2_signed_2;
@@ -875,7 +918,9 @@ module pipeline
 			     (isbranch1_id ? ~sptag1_id : ~(`SPECTAG_LEN'b0)) &
 			     (isbranch2_id ? ~sptag2_id : ~(`SPECTAG_LEN'b0))),
 		.mpft_valid2(mpft_valid & 
-			     (isbranch2_id ? ~sptag2_id : ~(`SPECTAG_LEN'b0)))
+			     (isbranch2_id ? ~sptag2_id : ~(`SPECTAG_LEN'b0))),
+        .raddr4test(raddr4test),
+        .rdata4test(rdata4test)
 		);
    
    assign	rrftagfix = buf_rrftag_branch + 1;
@@ -1334,6 +1379,7 @@ module pipeline
 		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
 		       .wvalid2_1(~uses_rs2_1_id | resolved2_1),
 		       .wimm_1(imm1),
+             .wdmem_type_1(dmem_type_1_id),
 		       .wrrftag_1(dst1_renamed),
 		       .wdstval_1(wr_reg_1_id),
 		       .wspectag_1(sptag1_id),
@@ -1345,6 +1391,7 @@ module pipeline
 		       .wvalid1_2(~uses_rs1_2_id | resolved1_2),
 		       .wvalid2_2(~uses_rs2_2_id | resolved2_2),
 		       .wimm_2(imm2),
+             .wdmem_type_2(dmem_type_2_id),
 		       .wrrftag_2(dst2_renamed),
 		       .wdstval_2(wr_reg_2_id),
 		       .wspectag_2(sptag2_id),
@@ -1355,6 +1402,7 @@ module pipeline
 		       .ready(ready_ldst),
 		       .pc(pc_ldst),
 		       .imm(imm_ldst),
+             .dmem_type(funct3_ldst),
 		       .rrftag(rrftag_ldst),
 		       .dstval(dstval_ldst),
 		       .spectag(spectag_ldst),
@@ -1677,6 +1725,7 @@ module pipeline
 	 buf_ex_src2_ldst <= 0;
 	 buf_pc_ldst <= 0;
 	 buf_imm_ldst <= 0;
+    buf_funct3_ldst <= 0;
 	 buf_rrftag_ldst <= 0;
 	 buf_dstval_ldst <= 0;
 	 buf_spectag_ldst <= 0;
@@ -1686,6 +1735,7 @@ module pipeline
 	 buf_ex_src2_ldst <= ex_src2_ldst;
 	 buf_pc_ldst <= pc_ldst;
 	 buf_imm_ldst <= imm_ldst;
+    buf_funct3_ldst <= funct3_ldst;
 	 buf_rrftag_ldst <= rrftag_ldst;
 	 buf_dstval_ldst <= dstval_ldst;
 	 buf_spectag_ldst <= spectag_ldst;
@@ -1693,7 +1743,7 @@ module pipeline
       end
    end // always @ (posedge clk)
 
-   assign dmem_addr = (memoccupy_ld) ? ldaddr : retaddr;
+   //assign staddr = (memoccupy_ld) ? ldaddr : retaddr;
 
 /*   
    dmem datamemory(
@@ -1704,6 +1754,87 @@ module pipeline
 		   .rdata(dmem_data)
 		   );
 */
+
+   dm_cache_fsm dcache(
+        .clk(clk),
+        .rst(reset), 
+        .cpu_req_addr(dcache_r_req ? ldaddr : retaddr),
+        .cpu_req_data(retdata),
+        .cpu_req_funct3(retfunct3),
+        .cpu_req_rw(dcache_r_req ? 1'b0 : 1'b1),
+        .cpu_req_valid(dcache_r_req || dcache_w_req),
+
+        .mem_data_data(dmem_data),
+        .mem_data_ready(dmem_done),
+
+        .mem_req_addr(dmem_addr),
+        .mem_req_data(dmem_wdata),
+        .mem_req_byteenable(dmem_byteenable),
+        .mem_req_rw(dmem_we),
+        //.mem_req_valid
+
+        .cpu_res_data(cpu_res_data),
+        .cpu_res_ready(cpu_res_ready),
+        .busy(dcache_busy)
+   );
+/*
+   assign dmem_we = {avm_m0_write, avm_m0_read};
+
+   avalon_sdr sdr_dcache(
+      .clk(clk),
+      .reset(reset),      
+      .avm_m0_write(avm_m0_write),
+      .avm_m0_writedata(dmem_wdata),
+      .avm_m0_read(avm_m0_read),
+      .avm_m0_address(dmem_addr),
+      .avm_m0_readdata(dmem_data),
+      .avm_m0_readdatavalid(dmem_done),
+      .avm_m0_waitrequest(1'b0),
+      .mem_req_rw(mem_rw_flag),
+      .maddr(maddr),
+      .read_data(mdata),
+      .write_data(writedata),
+      .mem_done(mem_done)
+            ); 
+*/
+
+/*
+   always @ (posedge clk) begin
+
+        dcache_r_req = 1'b0;
+        dcache_w_req = 1'b0;
+
+        if (~dcache_busy || ddata_ok) begin
+            if (memoccupy_ld) dcache_r_req = 1'b1;
+            else if (stretire) dcache_w_req = 1'b1;
+        end
+   end*/
+
+   always @ (posedge clk) begin
+
+        dcache_r_req <= 1'b0;
+        dcache_w_req <= 1'b0;
+
+        if (reset) req_enable <= 1'b0;
+		//应该在ld_issue后一个周期，也就是ld执行一个周期后，再判断是否可以申请dcache_req
+        //ld开始执行后，才可判断是否hit sb等操作，需要时间
+        else if (issue_ldst && dstval_ldst) req_enable <= 1'b1;
+        //storebuf命中的情况下无需申请dcache_req
+        else if (~memoccupy_ld && req_enable) req_enable <= 1'b0;
+
+        //在req_valid为真的情况下，不应该申请dcache_req，
+        //dcache接到申请后最快也要2cycle才能返回结果
+        //req_valid为真的下个cycle会被清除，然后就可以申请
+        if ((~dcache_busy || ddata_ok) && ~dcache_r_req && ~dcache_w_req) begin
+            if (memoccupy_ld && req_enable) begin
+                dcache_r_req <= 1'b1;
+                req_enable <= 1'b0;
+            end else if (~memoccupy_ld && stretire) begin
+                dcache_w_req <= 1'b1;
+            end
+        end
+   end
+
    storebuf sb
      (
       .clk(clk),
@@ -1717,14 +1848,19 @@ module pipeline
       .stspectag(buf_spectag_ldst),
       .stdata(storedata),
       .staddr(storeaddr),
+      .stfunct3(buf_funct3_ldst),
       .stcom(stcommit),
-      .stretire(dmem_we),
-      .retdata(dmem_wdata),
+      .stretire(stretire),
+      .retdata(retdata),
       .retaddr(retaddr),
+      .retfunct3(retfunct3),
       .memoccupy_ld(memoccupy_ld),
       .sb_full(sb_full),
+      .dmem_w_done(cpu_res_ready),
+      .cache_busy(dcache_busy),
       .ldaddr(ldaddr),
       .lddata(lddatasb),
+      .ldfunct3(ldfunct3),
       .hit(hitsb)
       );
 
@@ -1735,6 +1871,7 @@ module pipeline
 		      .ex_src2(buf_ex_src2_ldst),
 		      .pc(buf_pc_ldst),
 		      .imm(buf_imm_ldst),
+              .funct3(buf_funct3_ldst),
 		      .dstval(buf_dstval_ldst),
 		      .spectag(buf_spectag_ldst),
 		      .specbit(buf_specbit_ldst),
@@ -1748,15 +1885,19 @@ module pipeline
 		      .wrrftag(wrrftag_ldst),
 		      .kill_speculative(kill_speculative_ldst),
 		      .busy_next(busy_next_ldst),
+              .cache_busy(dcache_busy),
+              .cache_done(cpu_res_ready),
+              //.cache_req(dcache_r_req),
 		      .stfin(stfin),
 		      .memoccupy_ld(memoccupy_ld),
 		      .fullsb(sb_full),
 		      .storedata(storedata),
 		      .storeaddr(storeaddr),
 		      .hitsb(hitsb),
+              .ldfunct3(ldfunct3),
 		      .ldaddr(ldaddr),
 		      .lddatasb(lddatasb),
-		      .lddatamem(dmem_data)
+		      .lddatamem(cpu_res_data)
 		      );
 
    always @ (posedge clk) begin

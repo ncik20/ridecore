@@ -12,6 +12,7 @@ module rs_ldst_ent
    input wire 			 wvalid1,
    input wire 			 wvalid2,
    input wire [`DATA_LEN-1:0] 	 wimm,
+   input wire [`MEM_TYPE_WIDTH-1:0] 	 wdmem_type,
    input wire [`RRF_SEL-1:0] 	 wrrftag,
    input wire 			 wdstval,
    input wire [`SPECTAG_LEN-1:0] 	 wspectag,
@@ -21,6 +22,7 @@ module rs_ldst_ent
    output wire 			 ready,
    output reg [`ADDR_LEN-1:0] 	 pc,
    output reg [`DATA_LEN-1:0] 	 imm,
+   output reg [`MEM_TYPE_WIDTH-1:0] 	 dmem_type,
    output reg [`RRF_SEL-1:0] 	 rrftag,
    output reg 			 dstval,
    output reg [`SPECTAG_LEN-1:0] spectag,
@@ -62,6 +64,7 @@ module rs_ldst_ent
       if (reset) begin
 	 pc <= 0;
 	 imm <= 0;
+	 dmem_type <= 0;
 	 rrftag <= 0;
 	 dstval <= 0;
 	 spectag <= 0;
@@ -73,6 +76,7 @@ module rs_ldst_ent
       end else if (we) begin
 	 pc <= wpc;
 	 imm <= wimm;
+	 dmem_type <= wdmem_type;
 	 rrftag <= wrrftag;
 	 dstval <= wdstval;
 	 spectag <= wspectag;
@@ -161,6 +165,7 @@ module rs_ldst
    input wire 			   wvalid1_1,
    input wire 			   wvalid2_1,
    input wire [`DATA_LEN-1:0] 	   wimm_1,
+   input wire [`MEM_TYPE_WIDTH-1:0] 	   wdmem_type_1,
    input wire [`RRF_SEL-1:0] 	   wrrftag_1,
    input wire 			   wdstval_1,
    input wire [`SPECTAG_LEN-1:0] 	   wspectag_1,
@@ -172,6 +177,7 @@ module rs_ldst
    input wire 			   wvalid1_2,
    input wire 			   wvalid2_2,
    input wire [`DATA_LEN-1:0] 	   wimm_2,
+   input wire [`MEM_TYPE_WIDTH-1:0] 	   wdmem_type_2,
    input wire [`RRF_SEL-1:0] 	   wrrftag_2,
    input wire 			   wdstval_2,
    input wire [`SPECTAG_LEN-1:0] 	   wspectag_2,
@@ -183,6 +189,7 @@ module rs_ldst
    output wire [`LDST_ENT_NUM-1:0] ready,
    output wire [`ADDR_LEN-1:0] 	   pc,
    output wire [`DATA_LEN-1:0] 	   imm,
+   output wire [`MEM_TYPE_WIDTH-1:0] 	   dmem_type,
    output wire [`RRF_SEL-1:0] 	   rrftag,
    output wire 			   dstval,
    output wire [`SPECTAG_LEN-1:0]  spectag,
@@ -212,6 +219,7 @@ module rs_ldst
    wire 			      ready_0;
    wire [`ADDR_LEN-1:0] 	      pc_0;
    wire [`DATA_LEN-1:0] 	      imm_0;
+   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_0;
    wire [`RRF_SEL-1:0] 		      rrftag_0;
    wire 			      dstval_0;
    wire [`SPECTAG_LEN-1:0] 	      spectag_0;
@@ -221,6 +229,7 @@ module rs_ldst
    wire 			      ready_1;
    wire [`ADDR_LEN-1:0] 	      pc_1;
    wire [`DATA_LEN-1:0] 	      imm_1;
+   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_1;
    wire [`RRF_SEL-1:0] 		      rrftag_1;
    wire 			      dstval_1;
    wire [`SPECTAG_LEN-1:0] 	      spectag_1;
@@ -230,6 +239,7 @@ module rs_ldst
    wire 			      ready_2;
    wire [`ADDR_LEN-1:0] 	      pc_2;
    wire [`DATA_LEN-1:0] 	      imm_2;
+   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2;
    wire [`RRF_SEL-1:0] 		      rrftag_2;
    wire 			      dstval_2;
    wire [`SPECTAG_LEN-1:0] 	      spectag_2;
@@ -239,6 +249,7 @@ module rs_ldst
    wire 			      ready_3;
    wire [`ADDR_LEN-1:0] 	      pc_3;
    wire [`DATA_LEN-1:0] 	      imm_3;
+   wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_3;
    wire [`RRF_SEL-1:0] 		      rrftag_3;
    wire 			      dstval_3;
    wire [`SPECTAG_LEN-1:0] 	      spectag_3;
@@ -317,6 +328,7 @@ module rs_ldst
 		    .wvalid1((we1 && (waddr1 == 0)) ? wvalid1_1 : wvalid1_2),
 		    .wvalid2((we1 && (waddr1 == 0)) ? wvalid2_1 : wvalid2_2),
 		    .wimm((we1 && (waddr1 == 0)) ? wimm_1 : wimm_2),
+		    .wdmem_type((we1 && (waddr1 == 0)) ? wdmem_type_1 : wdmem_type_2),
 		    .wrrftag((we1 && (waddr1 == 0)) ? wrrftag_1 : wrrftag_2),
 		    .wdstval((we1 && (waddr1 == 0)) ? wdstval_1 : wdstval_2),
 		    .wspectag((we1 && (waddr1 == 0)) ? wspectag_1 : wspectag_2),
@@ -326,6 +338,7 @@ module rs_ldst
 		    .ready(ready_0),
 		    .pc(pc_0),
 		    .imm(imm_0),
+		    .dmem_type(dmem_type_0),
 		    .rrftag(rrftag_0),
 		    .dstval(dstval_0),
 		    .spectag(spectag_0),
@@ -348,7 +361,7 @@ module rs_ldst
 
    rs_ldst_ent ent1(
 		    .clk(clk),
-		    .reset(reset),		    
+		    .reset(reset),
 		    .busy(busyvec[1]),
 		    .wpc((we1 && (waddr1 == 1)) ? wpc_1 : wpc_2),
 		    .wsrc1((we1 && (waddr1 == 1)) ? wsrc1_1 : wsrc1_2),
@@ -356,6 +369,7 @@ module rs_ldst
 		    .wvalid1((we1 && (waddr1 == 1)) ? wvalid1_1 : wvalid1_2),
 		    .wvalid2((we1 && (waddr1 == 1)) ? wvalid2_1 : wvalid2_2),
 		    .wimm((we1 && (waddr1 == 1)) ? wimm_1 : wimm_2),
+		    .wdmem_type((we1 && (waddr1 == 1)) ? wdmem_type_1 : wdmem_type_2),
 		    .wrrftag((we1 && (waddr1 == 1)) ? wrrftag_1 : wrrftag_2),
 		    .wdstval((we1 && (waddr1 == 1)) ? wdstval_1 : wdstval_2),
 		    .wspectag((we1 && (waddr1 == 1)) ? wspectag_1 : wspectag_2),
@@ -365,6 +379,7 @@ module rs_ldst
 		    .ready(ready_1),
 		    .pc(pc_1),
 		    .imm(imm_1),
+		    .dmem_type(dmem_type_1),
 		    .rrftag(rrftag_1),
 		    .dstval(dstval_1),
 		    .spectag(spectag_1),
@@ -387,7 +402,7 @@ module rs_ldst
 
    rs_ldst_ent ent2(
 		    .clk(clk),
-		    .reset(reset),		    
+		    .reset(reset),
 		    .busy(busyvec[2]),
 		    .wpc((we1 && (waddr1 == 2)) ? wpc_1 : wpc_2),
 		    .wsrc1((we1 && (waddr1 == 2)) ? wsrc1_1 : wsrc1_2),
@@ -395,6 +410,7 @@ module rs_ldst
 		    .wvalid1((we1 && (waddr1 == 2)) ? wvalid1_1 : wvalid1_2),
 		    .wvalid2((we1 && (waddr1 == 2)) ? wvalid2_1 : wvalid2_2),
 		    .wimm((we1 && (waddr1 == 2)) ? wimm_1 : wimm_2),
+		    .wdmem_type((we1 && (waddr1 == 2)) ? wdmem_type_1 : wdmem_type_2),
 		    .wrrftag((we1 && (waddr1 == 2)) ? wrrftag_1 : wrrftag_2),
 		    .wdstval((we1 && (waddr1 == 2)) ? wdstval_1 : wdstval_2),
 		    .wspectag((we1 && (waddr1 == 2)) ? wspectag_1 : wspectag_2),
@@ -404,6 +420,7 @@ module rs_ldst
 		    .ready(ready_2),
 		    .pc(pc_2),
 		    .imm(imm_2),
+		    .dmem_type(dmem_type_2),
 		    .rrftag(rrftag_2),
 		    .dstval(dstval_2),
 		    .spectag(spectag_2),
@@ -426,7 +443,7 @@ module rs_ldst
 
    rs_ldst_ent ent3(
 		    .clk(clk),
-		    .reset(reset),		    
+		    .reset(reset),
 		    .busy(busyvec[3]),
 		    .wpc((we1 && (waddr1 == 3)) ? wpc_1 : wpc_2),
 		    .wsrc1((we1 && (waddr1 == 3)) ? wsrc1_1 : wsrc1_2),
@@ -434,6 +451,7 @@ module rs_ldst
 		    .wvalid1((we1 && (waddr1 == 3)) ? wvalid1_1 : wvalid1_2),
 		    .wvalid2((we1 && (waddr1 == 3)) ? wvalid2_1 : wvalid2_2),
 		    .wimm((we1 && (waddr1 == 3)) ? wimm_1 : wimm_2),
+		    .wdmem_type((we1 && (waddr1 == 3)) ? wdmem_type_1 : wdmem_type_2),
 		    .wrrftag((we1 && (waddr1 == 3)) ? wrrftag_1 : wrrftag_2),
 		    .wdstval((we1 && (waddr1 == 3)) ? wdstval_1 : wdstval_2),
 		    .wspectag((we1 && (waddr1 == 3)) ? wspectag_1 : wspectag_2),
@@ -443,6 +461,7 @@ module rs_ldst
 		    .ready(ready_3),
 		    .pc(pc_3),
 		    .imm(imm_3),
+		    .dmem_type(dmem_type_3),
 		    .rrftag(rrftag_3),
 		    .dstval(dstval_3),
 		    .spectag(spectag_3),
@@ -479,6 +498,10 @@ module rs_ldst
    assign imm = (issueaddr == 0) ? imm_0 :
 		(issueaddr == 1) ? imm_1 :
 		(issueaddr == 2) ? imm_2 : imm_3;
+
+   assign dmem_type = (issueaddr == 0) ? dmem_type_0 :
+		(issueaddr == 1) ? dmem_type_1 :
+		(issueaddr == 2) ? dmem_type_2 : dmem_type_3;
 
    assign rrftag = (issueaddr == 0) ? rrftag_0 :
 		   (issueaddr == 1) ? rrftag_1 :

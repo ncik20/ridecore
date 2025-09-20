@@ -40,7 +40,9 @@ module arf
    input wire 			 prsuccess,
    input wire [`SPECTAG_LEN-1:0] prtag,
    input wire [`SPECTAG_LEN-1:0] mpft_valid1,
-   input wire [`SPECTAG_LEN-1:0] mpft_valid2
+   input wire [`SPECTAG_LEN-1:0] mpft_valid2,
+   input wire [4:0] raddr4test,
+   output wire [31:0] rdata4test
    );
 
    // Set priority on instruction2 WriteBack
@@ -80,7 +82,9 @@ module arf
 	   .wdata2(wdata2),
 	   //	   .we1(we1_prior2),
 	   .we1(we1_0reg),
-	   .we2(we2_0reg)
+	   .we2(we2_0reg),
+       .raddr4test(raddr4test),
+       .rdata4test(rdata4test)
 	   );
 
    

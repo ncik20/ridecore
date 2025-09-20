@@ -15,7 +15,7 @@
 `define INSN_LEN 32
 `define ADDR_LEN 32
 `define ISSUE_NUM 2
-`define ENTRY_POINT `ADDR_LEN'h0
+`define ENTRY_POINT `ADDR_LEN'h2000_0000
 //`define REQDATA_LEN 2
 
 //Decoder
