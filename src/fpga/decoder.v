@@ -166,15 +166,15 @@ module decoder(
              `RV32_FUNCT3_CSRRC : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
              `RV32_FUNCT3_CSRRWI : begin
                  csr_op = `CSR_WRITE;
-                 src_a_sel = `SRC_A_IMM;
+                 uses_rs1 = 1'b0;
              end
              `RV32_FUNCT3_CSRRSI : begin
                  csr_op = (rs1 == 0) ? `CSR_READ : `CSR_SET;
-                 src_a_sel = `SRC_A_IMM;
+                 uses_rs1 = 1'b0;
              end
              `RV32_FUNCT3_CSRRCI : begin
                  csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
-                 src_a_sel = `SRC_A_IMM;
+                 uses_rs1 = 1'b0;
              end
              default : illegal_instruction = 1'b1;
            endcase // case (funct3)

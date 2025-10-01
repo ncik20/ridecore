@@ -371,8 +371,6 @@ module pipeline
    wire 		       allocatable_csr;
 
    wire [`DATA_LEN-1:0]        ex_src1_csr;
-   wire [`DATA_LEN-1:0]        ex_src2_csr;
-   wire [`ADDR_LEN-1:0]        pc_csr;
    wire [`DATA_LEN-1:0]        imm_csr;
    wire [`CSR_OP_WIDTH-1:0]    csr_op_csr;
    wire [`RRF_SEL-1:0]         rrftag_csr;
@@ -1665,7 +1663,7 @@ module pipeline
       .prbusyvec_next(prbusyvec_next_csr),
       .readyvec(ready_csr),
       .prmiss(prmiss),
-      .exunit_busynext(busy_next_csr),
+      .exunit_busynext(1'b0),
       .stall_DP(stall_DP),
       .kill_DP(kill_DP),
       .allocptr(allocent1_csr),
@@ -1693,11 +1691,8 @@ module pipeline
 		       .waddr2(req1_csr ? 
 			       allocent2_csr : allocent1_csr), //allocent2
 		       //WriteSignal1
-		       .wpc_1(pc_id),
-		       .wsrc1_1(src1_1),
-		       .wsrc2_1(src2_1),
+		       .wsrc1_1(uses_rs1_1_id ? src1_1 : { {27{1'b0}}, rs1_1_id[4:0] }),
 		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
-		       .wvalid2_1(~uses_rs2_1_id | resolved2_1),
 		       .wimm_1(imm1),
                .wcsr_op_1(csr_op_1_id),
 		       .wrrftag_1(dst1_renamed),
@@ -1705,11 +1700,8 @@ module pipeline
 		       .wspectag_1(sptag1_id),
 		       .wspecbit_1(spec1_id),
 		       //WriteSignal2
-		       .wpc_2(pc_id + 4),
-		       .wsrc1_2(src1_2),
-		       .wsrc2_2(src2_2),
-		       .wvalid1_2(~uses_rs1_2_id | resolved1_2),
-		       .wvalid2_2(~uses_rs2_2_id | resolved2_2),
+		       .wsrc1_2(uses_rs1_2_id ? src1_2 : { {27{1'b0}}, rs1_2_id[4:0] }),
+               .wvalid1_2(~uses_rs1_2_id | resolved1_2),
 		       .wimm_2(imm2),
                .wcsr_op_2(csr_op_2_id),
 		       .wrrftag_2(dst2_renamed),
@@ -1718,9 +1710,7 @@ module pipeline
 		       .wspecbit_2(spec2_id),
 		       //ReadSignal
 		       .ex_src1(ex_src1_csr),
-		       .ex_src2(ex_src2_csr),
 		       .ready(ready_csr),
-		       .pc(pc_csr),
 		       .imm(imm_csr),
                .csr_op(csr_op_csr),
 		       .rrftag(rrftag_csr),

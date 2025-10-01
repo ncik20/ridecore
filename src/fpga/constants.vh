@@ -79,7 +79,6 @@
 `define SRC_A_RS1  `SRC_A_SEL_WIDTH'd0
 `define SRC_A_PC   `SRC_A_SEL_WIDTH'd1
 `define SRC_A_ZERO `SRC_A_SEL_WIDTH'd2
-`define SRC_A_IMM  `SRC_A_SEL_WIDTH'd3
 
 //src_b
 `define SRC_B_SEL_WIDTH 2
@@ -115,5 +114,5 @@
 `define CSR_OP_WIDTH 2
 `define CSR_READ  `CSR_OP_WIDTH'd0
 `define CSR_WRITE `CSR_OP_WIDTH'd1
-`define CSR_SET `  CSR_OP_WIDTH'd2
+`define CSR_SET   `CSR_OP_WIDTH'd2
 `define CSR_CLEAR `CSR_OP_WIDTH'd3
