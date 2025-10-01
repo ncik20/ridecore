@@ -15,7 +15,10 @@ module rs_requestgenerator
    output wire [1:0] 		req_mulnum,
    output wire 			req1_ldst,
    output wire 			req2_ldst,
-   output wire [1:0] 		req_ldstnum
+   output wire [1:0] 		req_ldstnum,
+   output wire 			req1_csr,
+   output wire 			req2_csr,
+   output wire [1:0] 		req_csrnum   
    );
 
    assign req1_alu = (rsent_1 == `RS_ENT_ALU) ? 1'b1 : 1'b0;
@@ -34,5 +37,8 @@ module rs_requestgenerator
    assign req2_ldst = (rsent_2 == `RS_ENT_LDST) ? 1'b1 : 1'b0;
    assign req_ldstnum = {1'b0, req1_ldst} + {1'b0, req2_ldst};
    
+   assign req1_csr = (rsent_1 == `RS_ENT_CSR) ? 1'b1 : 1'b0;
+   assign req2_csr = (rsent_2 == `RS_ENT_CSR) ? 1'b1 : 1'b0;
+   assign req_csrnum = {1'b0, req1_csr} + {1'b0, req2_csr};
 endmodule // rs_requestgenerator
 `default_nettype wire

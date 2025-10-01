@@ -65,6 +65,7 @@ module pipeline
    wire 		       uses_rs2_1;
    wire 		       illegal_instruction_1;
    wire [`ALU_OP_WIDTH-1:0]    alu_op_1;
+   wire [`CSR_OP_WIDTH-1:0]    csr_op_1;
    wire [`RS_ENT_SEL-1:0]      rs_ent_1;
    wire [2:0] 		       dmem_size_1;
    wire [`MEM_TYPE_WIDTH-1:0]  dmem_type_1;
@@ -84,6 +85,7 @@ module pipeline
    wire 			uses_rs2_2;
    wire 			illegal_instruction_2;
    wire [`ALU_OP_WIDTH-1:0] 	alu_op_2;
+   wire [`CSR_OP_WIDTH-1:0]     csr_op_2;
    wire [`RS_ENT_SEL-1:0] 	rs_ent_2;
    wire [2:0] 			dmem_size_2;
    wire [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2;
@@ -115,6 +117,7 @@ module pipeline
    reg 				uses_rs2_1_id;
    reg 				illegal_instruction_1_id;
    reg [`ALU_OP_WIDTH-1:0] 	alu_op_1_id;
+   reg [`CSR_OP_WIDTH-1:0] 	csr_op_1_id;
    reg [`RS_ENT_SEL-1:0] 	rs_ent_1_id;
    reg [2:0] 			dmem_size_1_id;
    reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_1_id;
@@ -134,6 +137,7 @@ module pipeline
    reg 				uses_rs2_2_id;
    reg 				illegal_instruction_2_id;
    reg [`ALU_OP_WIDTH-1:0] 	alu_op_2_id;
+   reg [`CSR_OP_WIDTH-1:0] 	csr_op_2_id;
    reg [`RS_ENT_SEL-1:0] 	rs_ent_2_id;
    reg [2:0] 			dmem_size_2_id;
    reg [`MEM_TYPE_WIDTH-1:0] 	dmem_type_2_id;
@@ -237,6 +241,9 @@ module pipeline
    wire 		req1_ldst;
    wire 		req2_ldst;
    wire [1:0] 		req_ldstnum;
+   wire 		req1_csr;
+   wire 		req2_csr;
+   wire [1:0] 		req_csrnum;
 
    wire [`ALU_ENT_SEL:0] allocent1_alu;
    wire [`ALU_ENT_SEL:0] allocent2_alu;
@@ -352,6 +359,26 @@ module pipeline
    wire 		       src1_signed_mul;
    wire 		       src2_signed_mul;
    wire 		       sel_lohi_mul;
+
+   wire [`CSR_ENT_SEL-1:0]    allocent1_csr;
+   wire [`CSR_ENT_SEL-1:0]    allocent2_csr;
+   wire [`CSR_ENT_NUM-1:0]    busyvec_csr;
+   wire [`CSR_ENT_NUM-1:0]    prbusyvec_next_csr;
+   wire [`CSR_ENT_NUM-1:0]    ready_csr;
+   wire 		       issuevalid_csr;
+   wire [`CSR_ENT_SEL-1:0]    issueent_csr;
+   wire 		       issue_csr;
+   wire 		       allocatable_csr;
+
+   wire [`DATA_LEN-1:0]        ex_src1_csr;
+   wire [`DATA_LEN-1:0]        ex_src2_csr;
+   wire [`ADDR_LEN-1:0]        pc_csr;
+   wire [`DATA_LEN-1:0]        imm_csr;
+   wire [`CSR_OP_WIDTH-1:0]    csr_op_csr;
+   wire [`RRF_SEL-1:0]         rrftag_csr;
+   wire                dstval_csr;
+   wire [`SPECTAG_LEN-1:0]     spectag_csr;
+   wire                specbit_csr;
 
    //EX
    //ALU1
@@ -624,6 +651,7 @@ module pipeline
 		.uses_rs2(uses_rs2_1),
 		.illegal_instruction(illegal_instruction_1),
 		.alu_op(alu_op_1),
+		.csr_op(csr_op_1),
 		.rs_ent(rs_ent_1),
 		.dmem_size(dmem_size_1),
 		.dmem_type(dmem_type_1),
@@ -646,6 +674,7 @@ module pipeline
 		.uses_rs2(uses_rs2_2),
 		.illegal_instruction(illegal_instruction_2),
 		.alu_op(alu_op_2),
+		.csr_op(csr_op_2),
 		.rs_ent(rs_ent_2),
 		.dmem_size(dmem_size_2),
 		.dmem_type(dmem_type_2),
@@ -668,6 +697,7 @@ module pipeline
 	 uses_rs2_1_id <= 0;
 	 illegal_instruction_1_id <= 0;
 	 alu_op_1_id <= 0;
+	 csr_op_1_id <= 0;
 	 rs_ent_1_id <= 0;
 	 dmem_size_1_id <= 0;
 	 dmem_type_1_id <= 0;
@@ -686,6 +716,7 @@ module pipeline
 	 uses_rs2_2_id <= 0;
 	 illegal_instruction_2_id <= 0;
 	 alu_op_2_id <= 0;
+	 csr_op_2_id <= 0;
 	 rs_ent_2_id <= 0;
 	 dmem_size_2_id <= 0;
 	 dmem_type_2_id <= 0;
@@ -726,6 +757,7 @@ module pipeline
 	 uses_rs2_1_id <= uses_rs2_1;
 	 illegal_instruction_1_id <= illegal_instruction_1;
 	 alu_op_1_id <= alu_op_1;
+	 csr_op_1_id <= csr_op_1;
 	 rs_ent_1_id <= inv1_if ? 0 : rs_ent_1;
 	 dmem_size_1_id <= dmem_size_1;
 	 dmem_type_1_id <= dmem_type_1;
@@ -744,6 +776,7 @@ module pipeline
 	 uses_rs2_2_id <= uses_rs2_2;
 	 illegal_instruction_2_id <= illegal_instruction_2;
 	 alu_op_2_id <= alu_op_2;
+	 csr_op_2_id <= csr_op_2;
 	 rs_ent_2_id <= (inv2_if | (prcond_if & isbranch1)) ? 0 : rs_ent_2;
 	 dmem_size_2_id <= dmem_size_2;
 	 dmem_type_2_id <= dmem_type_2;
@@ -798,7 +831,7 @@ module pipeline
    
    //DP & SW Stage***************************************************
    assign stall_DP = ~allocatable_alu | ~allocatable_ldst |
-		     ~allocatable_mul | ~allocatable_branch | ~alloc_rrf | prsuccess;
+		     ~allocatable_mul | ~allocatable_branch | ~allocatable_csr | ~alloc_rrf | prsuccess;
 
    assign kill_DP = prmiss;
    
@@ -1089,7 +1122,10 @@ module pipeline
 				 .req_mulnum(req_mulnum),
 				 .req1_ldst(req1_ldst),
 				 .req2_ldst(req2_ldst),
-				 .req_ldstnum(req_ldstnum)
+				 .req_ldstnum(req_ldstnum),
+				 .req1_csr(req1_csr),
+				 .req2_csr(req2_csr),
+				 .req_csrnum(req_csrnum)
 				 );
 
    
@@ -1617,6 +1653,97 @@ module pipeline
 		     .kill_spec5(kill_speculative_mul | ~robwe_mul)
 		     );
    
+   assign allocent2_csr = allocent1_csr + 1;
+   assign issue_csr = ~prmiss & issuevalid_csr;
+
+   alloc_issue_ino #(`CSR_ENT_SEL, `CSR_ENT_NUM) ai_csr
+     (
+      .clk(clk),
+      .reset(reset),
+      .reqnum(req_csrnum),
+      .busyvec(busyvec_csr),
+      .prbusyvec_next(prbusyvec_next_csr),
+      .readyvec(ready_csr),
+      .prmiss(prmiss),
+      .exunit_busynext(busy_next_csr),
+      .stall_DP(stall_DP),
+      .kill_DP(kill_DP),
+      .allocptr(allocent1_csr),
+      .allocatable(allocatable_csr),
+      .issueptr(issueent_csr),
+      .issuevalid(issuevalid_csr)
+      );
+   
+   rs_csr reserv_csr(
+		       //System
+		       .clk(clk),
+		       .reset(reset),
+		       .busyvec(busyvec_csr),
+		       .prmiss(prmiss),
+		       .prsuccess(prsuccess),
+		       .prtag(buf_spectag_branch),
+		       .specfixtag(spectagfix),
+		       .prbusyvec_next(prbusyvec_next_csr),
+		       //WriteSignal
+		       .clearbusy(issue_csr), //Issue 
+		       .issueaddr(issueent_csr), //= raddr, clsbsyadr
+		       .we1(~stall_DP & ~kill_DP & req1_csr), //alloc1
+		       .we2(~stall_DP & ~kill_DP & req2_csr), //alloc2
+		       .waddr1(allocent1_csr), //allocent1
+		       .waddr2(req1_csr ? 
+			       allocent2_csr : allocent1_csr), //allocent2
+		       //WriteSignal1
+		       .wpc_1(pc_id),
+		       .wsrc1_1(src1_1),
+		       .wsrc2_1(src2_1),
+		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
+		       .wvalid2_1(~uses_rs2_1_id | resolved2_1),
+		       .wimm_1(imm1),
+               .wcsr_op_1(csr_op_1_id),
+		       .wrrftag_1(dst1_renamed),
+		       .wdstval_1(wr_reg_1_id),
+		       .wspectag_1(sptag1_id),
+		       .wspecbit_1(spec1_id),
+		       //WriteSignal2
+		       .wpc_2(pc_id + 4),
+		       .wsrc1_2(src1_2),
+		       .wsrc2_2(src2_2),
+		       .wvalid1_2(~uses_rs1_2_id | resolved1_2),
+		       .wvalid2_2(~uses_rs2_2_id | resolved2_2),
+		       .wimm_2(imm2),
+               .wcsr_op_2(csr_op_2_id),
+		       .wrrftag_2(dst2_renamed),
+		       .wdstval_2(wr_reg_2_id),
+		       .wspectag_2(sptag2_id),
+		       .wspecbit_2(spec2_id),
+		       //ReadSignal
+		       .ex_src1(ex_src1_csr),
+		       .ex_src2(ex_src2_csr),
+		       .ready(ready_csr),
+		       .pc(pc_csr),
+		       .imm(imm_csr),
+               .csr_op(csr_op_csr),
+		       .rrftag(rrftag_csr),
+		       .dstval(dstval_csr),
+		       .spectag(spectag_csr),
+		       .specbit(specbit_csr),
+		       //EXRSLT
+		       .exrslt1(result_alu1),
+		       .exdst1(buf_rrftag_alu1),
+		       .kill_spec1(kill_speculative_alu1 | ~robwe_alu1),
+		       .exrslt2(result_alu2),
+		       .exdst2(buf_rrftag_alu2),
+		       .kill_spec2(kill_speculative_alu2 | ~robwe_alu2),
+		       .exrslt3(result_ldst),
+		       .exdst3(wrrftag_ldst),
+		       .kill_spec3(kill_speculative_ldst | ~robwe_ldst),
+		       .exrslt4(result_branch),
+		       .exdst4(buf_rrftag_branch),
+		       .kill_spec4(~robwe_branch),
+		       .exrslt5(result_mul),
+		       .exdst5(buf_rrftag_mul),
+		       .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		       );
    //EX Stage********************************************************
 
    always @ (posedge clk) begin

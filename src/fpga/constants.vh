@@ -27,6 +27,7 @@
 `define RS_ENT_MUL 3
 `define RS_ENT_DIV 3
 `define RS_ENT_LDST 4
+`define RS_ENT_CSR 5
 
 //RS
 `define ALU_ENT_SEL 3
@@ -39,6 +40,8 @@
 //`define LDST_ENT_NUM 8
 `define MUL_ENT_SEL 1
 `define MUL_ENT_NUM 2
+`define CSR_ENT_SEL 1
+`define CSR_ENT_NUM 2
 
 //STOREBUFFER
 `define STBUF_ENT_SEL 5
@@ -76,6 +79,7 @@
 `define SRC_A_RS1  `SRC_A_SEL_WIDTH'd0
 `define SRC_A_PC   `SRC_A_SEL_WIDTH'd1
 `define SRC_A_ZERO `SRC_A_SEL_WIDTH'd2
+`define SRC_A_IMM  `SRC_A_SEL_WIDTH'd3
 
 //src_b
 `define SRC_B_SEL_WIDTH 2
@@ -108,3 +112,8 @@
 `define MD_OUT_HI  `MD_OUT_SEL_WIDTH'd1
 `define MD_OUT_REM `MD_OUT_SEL_WIDTH'd2
 
+`define CSR_OP_WIDTH 2
+`define CSR_READ  `CSR_OP_WIDTH'd0
+`define CSR_WRITE `CSR_OP_WIDTH'd1
+`define CSR_SET `  CSR_OP_WIDTH'd2
+`define CSR_CLEAR `CSR_OP_WIDTH'd3

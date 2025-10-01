@@ -17,6 +17,7 @@ module decoder(
 	       output reg 			  uses_rs2,
 	       output reg 			  illegal_instruction,
 	       output reg [`ALU_OP_WIDTH-1:0] 	  alu_op,
+	       output reg [`CSR_OP_WIDTH-1:0] 	  csr_op,
 	       output reg [`RS_ENT_SEL-1:0] 	  rs_ent,
 //	       output reg 			  dmem_use,
 //	       output reg 			  dmem_write,
@@ -61,7 +62,7 @@ module decoder(
       alu_op = `ALU_OP_ADD;
       
       case (opcode)
-	`RV32_LOAD : begin
+	    `RV32_LOAD : begin
 //           dmem_use = 1'b1;
            wr_reg = 1'b1;
 	   rs_ent = `RS_ENT_LDST;
@@ -139,11 +140,11 @@ module decoder(
 //              wb_src_sel_DX = `WB_SRC_MD;
            end
         end
-	/*
         `RV32_SYSTEM : begin
-           wb_src_sel_DX = `WB_SRC_CSR;
-           wr_reg = (funct3 != `RV32_FUNCT3_PRIV);
+//           wb_src_sel_DX = `WB_SRC_CSR;
+           wr_reg = 1'b1;
            case (funct3)
+/*
              `RV32_FUNCT3_PRIV : begin
                 if ((rs1 == 0) && (reg_to_wr_DX == 0)) begin
                    case (funct12)
@@ -159,16 +160,26 @@ module decoder(
                    endcase // case (funct12)
                 end // if ((rs1 == 0) && (reg_to_wr_DX == 0))
              end // case: `RV32_FUNCT3_PRIV
-             `RV32_FUNCT3_CSRRW : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_WRITE;
-             `RV32_FUNCT3_CSRRS : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_SET;
-             `RV32_FUNCT3_CSRRC : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
-             `RV32_FUNCT3_CSRRWI : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_WRITE;
-             `RV32_FUNCT3_CSRRSI : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_SET;
-             `RV32_FUNCT3_CSRRCI : csr_cmd = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
+*/
+             `RV32_FUNCT3_CSRRW : csr_op = `CSR_WRITE;
+             `RV32_FUNCT3_CSRRS : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_SET;
+             `RV32_FUNCT3_CSRRC : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
+             `RV32_FUNCT3_CSRRWI : begin
+                 csr_op = `CSR_WRITE;
+                 src_a_sel = `SRC_A_IMM;
+             end
+             `RV32_FUNCT3_CSRRSI : begin
+                 csr_op = (rs1 == 0) ? `CSR_READ : `CSR_SET;
+                 src_a_sel = `SRC_A_IMM;
+             end
+             `RV32_FUNCT3_CSRRCI : begin
+                 csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
+                 src_a_sel = `SRC_A_IMM;
+             end
              default : illegal_instruction = 1'b1;
            endcase // case (funct3)
+           rs_ent = `RS_ENT_CSR;
         end
-	 */
         `RV32_AUIPC : begin
            uses_rs1 = 1'b0;
            src_a_sel = `SRC_A_PC;
