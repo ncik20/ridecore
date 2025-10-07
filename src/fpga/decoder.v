@@ -161,11 +161,11 @@ module decoder(
                 end // if ((rs1 == 0) && (reg_to_wr_DX == 0))
              end // case: `RV32_FUNCT3_PRIV
 */
-             `RV32_FUNCT3_CSRRW : csr_op = `CSR_WRITE;
+             `RV32_FUNCT3_CSRRW : csr_op = (rd == 0) ? `CSR_WRITE_NOREAD : `CSR_WRITE;
              `RV32_FUNCT3_CSRRS : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_SET;
              `RV32_FUNCT3_CSRRC : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
              `RV32_FUNCT3_CSRRWI : begin
-                 csr_op = `CSR_WRITE;
+                 csr_op = (rd == 0) ? `CSR_WRITE_NOREAD : `CSR_WRITE;
                  uses_rs1 = 1'b0;
              end
              `RV32_FUNCT3_CSRRSI : begin

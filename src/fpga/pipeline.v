@@ -462,6 +462,20 @@ module pipeline
    reg 			       buf_src2_signed_mul;
    reg 			       buf_sel_lohi_mul;
    
+   //CSR
+   wire [`DATA_LEN-1:0]        result_csr;
+   wire 		       rrfwe_csr;
+   wire 		       robwe_csr;
+   wire 		       kill_speculative_csr;
+
+   reg [`DATA_LEN-1:0] 	       buf_ex_src1_csr;
+   reg [`DATA_LEN-1:0] 	       buf_imm_csr;
+   reg [`CSR_OP_WIDTH-1:0] 	   buf_csr_op_csr;
+   reg [`RRF_SEL-1:0] 	       buf_rrftag_csr;
+   reg 			       buf_dstval_csr;
+   reg [`SPECTAG_LEN-1:0]      buf_spectag_csr;
+   reg 			       buf_specbit_csr;
+
    //BRANCH
    wire 		       prmiss;
    wire 		       prsuccess;
@@ -496,6 +510,7 @@ module pipeline
    wire [`RRF_SEL-1:0] 	   comptr2;
    wire [1:0] 		   comnum;
    wire 		   stcommit;
+   wire 		   csrcommit;
    wire 		   arfwe1;
    wire 		   arfwe2;
    wire [`REG_SEL-1:0] 	   dstarf1;
@@ -833,7 +848,6 @@ module pipeline
 
    assign kill_DP = prmiss;
    
-   
    sourceoperand_manager sopm1_1(
 				 .arfdata(adat1_1),
 				 .arf_busy(abusy1_1),
@@ -979,22 +993,24 @@ module pipeline
 		.wrrfaddr3(wrrftag_ldst),
 		.wrrfaddr4(buf_rrftag_branch),      
 		.wrrfaddr5(buf_rrftag_mul),
+		.wrrfaddr6(buf_rrftag_csr),
 		.wrrfdata1(result_alu1),
 		.wrrfdata2(result_alu2),
 		.wrrfdata3(result_ldst),
 		.wrrfdata4(result_branch),
 		.wrrfdata5(result_mul),
+		.wrrfdata6(result_csr),
 		.wrrfen1(rrfwe_alu1),
 		.wrrfen2(rrfwe_alu2),
 		.wrrfen3(rrfwe_ldst),
 		.wrrfen4(rrfwe_branch),
 		.wrrfen5(rrfwe_mul),
+		.wrrfen6(rrfwe_csr),
 		.dpaddr1(dst1_renamed),
 		.dpaddr2(dst2_renamed),
 		.dpen1(~stall_DP & ~kill_DP & ~inv1_id), // hoge
 		.dpen2(~stall_DP & ~kill_DP & ~inv2_id)  // hoge
 		);
-
 
    src_manager srcmng1_1(
 			 .opr(opr1_1),
@@ -1014,6 +1030,9 @@ module pipeline
 			 .exrslt5(result_mul),
 			 .exdst5(buf_rrftag_mul),
 			 .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			 .exrslt6(result_csr),
+			 .exdst6(buf_rrftag_csr),
+			 .kill_spec6(kill_speculative_csr | ~robwe_csr),
 			 .src(src1_1),
 			 .resolved(resolved1_1)
 			 );
@@ -1036,6 +1055,9 @@ module pipeline
 			 .exrslt5(result_mul),
 			 .exdst5(buf_rrftag_mul),
 			 .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			 .exrslt6(result_csr),
+			 .exdst6(buf_rrftag_csr),
+			 .kill_spec6(kill_speculative_csr | ~robwe_csr),
 			 .src(src2_1),
 			 .resolved(resolved2_1)
 			 );
@@ -1058,6 +1080,9 @@ module pipeline
 			 .exrslt5(result_mul),
 			 .exdst5(buf_rrftag_mul),
 			 .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			 .exrslt6(result_csr),
+			 .exdst6(buf_rrftag_csr),
+			 .kill_spec6(kill_speculative_csr | ~robwe_csr),
 			 .src(src1_2),
 			 .resolved(resolved1_2)
 			 );
@@ -1080,6 +1105,9 @@ module pipeline
 			 .exrslt5(result_mul),
 			 .exdst5(buf_rrftag_mul),
 			 .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			 .exrslt6(result_csr),
+			 .exdst6(buf_rrftag_csr),
+			 .kill_spec6(kill_speculative_csr | ~robwe_csr),
 			 .src(src2_2),
 			 .resolved(resolved2_2)
 			 );
@@ -1284,7 +1312,10 @@ module pipeline
 		      .kill_spec4(~robwe_branch),
 		      .exrslt5(result_mul),
 		      .exdst5(buf_rrftag_mul),
-		      .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		      .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			  .exrslt6(result_csr),
+			  .exdst6(buf_rrftag_csr),
+			  .kill_spec6(kill_speculative_csr | ~robwe_csr)
 		      );
 
    rs_alu reserv_alu2(
@@ -1363,7 +1394,10 @@ module pipeline
 		      .kill_spec4(~robwe_branch),
 		      .exrslt5(result_mul),
 		      .exdst5(buf_rrftag_mul),
-		      .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		      .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			  .exrslt6(result_csr),
+			  .exdst6(buf_rrftag_csr),
+			  .kill_spec6(kill_speculative_csr | ~robwe_csr)
 		      );
 
 
@@ -1456,7 +1490,10 @@ module pipeline
 		       .kill_spec4(~robwe_branch),
 		       .exrslt5(result_mul),
 		       .exdst5(buf_rrftag_mul),
-		       .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		       .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			   .exrslt6(result_csr),
+			   .exdst6(buf_rrftag_csr),
+			   .kill_spec6(kill_speculative_csr | ~robwe_csr)
 		       );
 
 
@@ -1560,7 +1597,10 @@ module pipeline
 			   .kill_spec4(~robwe_branch),
 			   .exrslt5(result_mul),
 			   .exdst5(buf_rrftag_mul),
-			   .kill_spec5(kill_speculative_mul | ~robwe_mul)
+			   .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			   .exrslt6(result_csr),
+			   .exdst6(buf_rrftag_csr),
+			   .kill_spec6(kill_speculative_csr | ~robwe_csr)
 			   );
 
    assign issue_mul = ~prmiss & issuevalid_mul;
@@ -1648,7 +1688,10 @@ module pipeline
 		     .kill_spec4(~robwe_branch),
 		     .exrslt5(result_mul),
 		     .exdst5(buf_rrftag_mul),
-		     .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		     .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			 .exrslt6(result_csr),
+			 .exdst6(buf_rrftag_csr),
+			 .kill_spec6(kill_speculative_csr | ~robwe_csr)
 		     );
    
    assign allocent2_csr = allocent1_csr + 1;
@@ -1718,6 +1761,7 @@ module pipeline
 		       .spectag(spectag_csr),
 		       .specbit(specbit_csr),
 		       //EXRSLT
+               .csrcommit(csrcommit),
 		       .exrslt1(result_alu1),
 		       .exdst1(buf_rrftag_alu1),
 		       .kill_spec1(kill_speculative_alu1 | ~robwe_alu1),
@@ -1732,7 +1776,10 @@ module pipeline
 		       .kill_spec4(~robwe_branch),
 		       .exrslt5(result_mul),
 		       .exdst5(buf_rrftag_mul),
-		       .kill_spec5(kill_speculative_mul | ~robwe_mul)
+		       .kill_spec5(kill_speculative_mul | ~robwe_mul),
+			   .exrslt6(result_csr),
+			   .exdst6(buf_rrftag_csr),
+			   .kill_spec6(kill_speculative_csr | ~robwe_csr)
 		       );
    //EX Stage********************************************************
 
@@ -2063,6 +2110,43 @@ module pipeline
 		     .kill_speculative(kill_speculative_mul)
 		     );
 
+   always @ (posedge clk) begin
+      if (reset) begin
+	 buf_ex_src1_csr <= 0;
+	 buf_imm_csr <= 0;
+	 buf_dstval_csr <= 0;
+	 buf_csr_op_csr <= 0;
+	 buf_rrftag_csr <= 0;
+	 buf_spectag_csr <= 0;
+	 buf_specbit_csr <= 0;
+      end else if (issue_csr) begin
+	 buf_ex_src1_csr <= ex_src1_csr;
+	 buf_imm_csr <= imm_csr;
+	 buf_dstval_csr <= dstval_csr;
+	 buf_csr_op_csr <= csr_op_csr;
+	 buf_rrftag_csr <= rrftag_csr;
+	 buf_spectag_csr <= spectag_csr;
+	 buf_specbit_csr <= specbit_csr;
+      end
+   end
+   
+   exunit_csr csr_ex (
+		     .clk(clk),
+		     .reset(reset),
+		     .ex_src1(buf_ex_src1_csr),
+		     .imm(buf_imm_csr),
+		     .dstval(buf_dstval_csr),
+		     .csr_op(buf_csr_op_csr),
+		     .spectag(buf_spectag_csr),
+		     .specbit(buf_specbit_csr),
+		     .issue(issue_csr),
+		     .prmiss(prmiss),
+		     .spectagfix(spectagfix),
+		     .result(result_csr),
+		     .rrf_we(rrfwe_csr),
+		     .rob_we(robwe_csr),
+		     .kill_speculative(kill_speculative_csr)
+		     );
 
    always @ (posedge clk) begin
       if (reset) begin
@@ -2116,7 +2200,6 @@ module pipeline
 		       .brcond(brcond),
 		       .tagregfix(tagregfix)
 		       );
-
    
    miss_prediction_fix_table mpft(
 				  .clk(clk),
@@ -2141,6 +2224,7 @@ module pipeline
 		  .dp1_addr(dst1_renamed),
 		  .pc_dp1(pc_id),
 		  .storebit_dp1(inst1_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
+		  .csrbit_dp1(inst1_id[6:0] == `RV32_SYSTEM ? 1'b1 : 1'b0),
 		  .dstvalid_dp1(wr_reg_1_id),
 		  .dst_dp1(rd_1_id),
 		  .bhr_dp1(bhr_id),
@@ -2149,6 +2233,7 @@ module pipeline
 		  .dp2_addr(dst2_renamed),
 		  .pc_dp2(pc_id + 4),
 		  .storebit_dp2(inst2_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
+		  .csrbit_dp2(inst2_id[6:0] == `RV32_SYSTEM ? 1'b1 : 1'b0),
 		  .dstvalid_dp2(wr_reg_2_id),
 		  .dst_dp2(rd_2_id),
 		  .bhr_dp2(bhr_id),
@@ -2159,6 +2244,8 @@ module pipeline
 		  .exfin_alu2_addr(buf_rrftag_alu2),
 		  .exfin_mul(robwe_mul),
 		  .exfin_mul_addr(buf_rrftag_mul),
+		  .exfin_csr(robwe_csr),
+		  .exfin_csr_addr(buf_rrftag_csr),
 		  .exfin_ldst(robwe_ldst),
 		  .exfin_ldst_addr(wrrftag_ldst),
 		  .exfin_branch(robwe_branch),
@@ -2170,6 +2257,7 @@ module pipeline
 		  .comptr2(comptr2),
 		  .comnum(comnum),
 		  .stcommit(stcommit),
+          .csrcommit(csrcommit),
 		  .arfwe1(arfwe1),
 		  .arfwe2(arfwe2),
 		  .dstarf1(dstarf1),

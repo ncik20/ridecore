@@ -111,8 +111,9 @@
 `define MD_OUT_HI  `MD_OUT_SEL_WIDTH'd1
 `define MD_OUT_REM `MD_OUT_SEL_WIDTH'd2
 
-`define CSR_OP_WIDTH 2
-`define CSR_READ  `CSR_OP_WIDTH'd0
-`define CSR_WRITE `CSR_OP_WIDTH'd1
-`define CSR_SET   `CSR_OP_WIDTH'd2
-`define CSR_CLEAR `CSR_OP_WIDTH'd3
+`define CSR_OP_WIDTH 3
+`define CSR_READ            `CSR_OP_WIDTH'd0
+`define CSR_WRITE           `CSR_OP_WIDTH'd1
+`define CSR_WRITE_NOREAD    `CSR_OP_WIDTH'd2
+`define CSR_SET             `CSR_OP_WIDTH'd3
+`define CSR_CLEAR           `CSR_OP_WIDTH'd4

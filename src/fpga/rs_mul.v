@@ -42,7 +42,10 @@ module rs_mul_ent
    input wire 			 kill_spec4,
    input wire [`DATA_LEN-1:0] 	 exrslt5,
    input wire [`RRF_SEL-1:0] 	 exdst5,
-   input wire 			 kill_spec5
+   input wire 			 kill_spec5,
+   input wire [`DATA_LEN-1:0] 	 exrslt6,
+   input wire [`RRF_SEL-1:0] 	 exdst6,
+   input wire 			 kill_spec6
    );
 
    reg [`DATA_LEN-1:0] 		 src1;
@@ -112,6 +115,9 @@ module rs_mul_ent
 		       .exrslt5(exrslt5),
 		       .exdst5(exdst5),
 		       .kill_spec5(kill_spec5),
+		       .exrslt6(exrslt6),
+		       .exdst6(exdst6),
+		       .kill_spec6(kill_spec6),
 		       .src(nextsrc1),
 		       .resolved(nextvalid1)
 		       );
@@ -134,6 +140,9 @@ module rs_mul_ent
 		       .exrslt5(exrslt5),
 		       .exdst5(exdst5),
 		       .kill_spec5(kill_spec5),
+		       .exrslt6(exrslt6),
+		       .exdst6(exdst6),
+		       .kill_spec6(kill_spec6),
 		       .src(nextsrc2),
 		       .resolved(nextvalid2)
 		       );
@@ -211,7 +220,10 @@ module rs_mul
    input wire 			  kill_spec4,
    input wire [`DATA_LEN-1:0] 	  exrslt5,
    input wire [`RRF_SEL-1:0] 	  exdst5,
-   input wire 			  kill_spec5
+   input wire 			  kill_spec5,
+   input wire [`DATA_LEN-1:0] 	  exrslt6,
+   input wire [`RRF_SEL-1:0] 	  exdst6,
+   input wire 			  kill_spec6
    );
 
    //_0
@@ -332,7 +344,10 @@ module rs_mul
 		   .kill_spec4(kill_spec4),
 		   .exrslt5(exrslt5),
 		   .exdst5(exdst5),
-		   .kill_spec5(kill_spec5)
+		   .kill_spec5(kill_spec5),
+		   .exrslt6(exrslt6),
+		   .exdst6(exdst6),
+		   .kill_spec6(kill_spec6)
 		   );
 
    rs_mul_ent ent1(
@@ -373,7 +388,10 @@ module rs_mul
 		   .kill_spec4(kill_spec4),
 		   .exrslt5(exrslt5),
 		   .exdst5(exdst5),
-		   .kill_spec5(kill_spec5)
+		   .kill_spec5(kill_spec5),
+		   .exrslt6(exrslt6),
+		   .exdst6(exdst6),
+		   .kill_spec6(kill_spec6)
 		   );
    
    assign ex_src1 = (issueaddr == 0) ? ex_src1_0 : ex_src1_1;
