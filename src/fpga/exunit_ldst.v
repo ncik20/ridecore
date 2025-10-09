@@ -6,6 +6,7 @@ module exunit_ldst
   (
    input wire 			 clk,
    input wire 			 reset,
+   input wire 			 irq_flush,
    input wire [`DATA_LEN-1:0] 	    ex_src1,
    input wire [`DATA_LEN-1:0] 	    ex_src2,
    input wire [`ADDR_LEN-1:0] 	    pc,
@@ -146,7 +147,7 @@ module exunit_ldst
    end // always @ (posedge clk)
 
    always @ (posedge clk) begin
-      if (reset | killspec1) begin
+      if (reset || killspec1) begin
         busy <= 0;
       end else begin
         busy <= issue | busy_next;

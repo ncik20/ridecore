@@ -4,6 +4,7 @@ module reorderbuf
   (
    input wire 			  clk,
    input wire 			  reset,
+   input wire             irq_flush,
    //Write Signal
    input wire 			  dp1,
    input wire [`RRF_SEL-1:0] 	  dp1_addr,
@@ -71,57 +72,53 @@ module reorderbuf
    
    assign comptr2 = comptr+1;
    
-   wire 			  hidp = (comptr > dispatchptr) || (rrf_freenum == 0) ?
-				  1'b1 : 1'b0;
+   wire 			  hidp = (comptr > dispatchptr) || (rrf_freenum == 0) ? 1'b1 : 1'b0;
    wire 			  com_en1 = ({hidp, dispatchptr} - {1'b0, comptr}) > 0 ? 1'b1 : 1'b0;
    wire 			  com_en2 = ({hidp, dispatchptr} - {1'b0, comptr}) > 1 ? 1'b1 : 1'b0;
    wire 			  commit1 = com_en1 & finish[comptr];
    //   wire commit2 = commit1 & com_en2 & finish[comptr2];
 
-   wire 			  commit2 = 
-				  ~(~prmiss & commit1 & isbranch[comptr]) &
-				  ~(commit1 & storebit[comptr] & ~prmiss) &
-				  commit1 & com_en2 & finish[comptr2];
+   wire 			  commit2 = ~combranch1 & ~stcommit1 & commit1 & 
+                                com_en2 & finish[comptr2];
+
+   wire               combranch1 = ~prmiss & commit1 & isbranch[comptr];
+   wire               stcommit1 = ~prmiss & commit1 & storebit[comptr];
 
    wire [`RRF_SEL-1:0] next_comptr = comptr + commit1 + commit2;
 
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
-   assign stcommit = (commit1 & storebit[comptr] & ~prmiss) |
-		     (commit2 & storebit[comptr2] & ~prmiss);
-   assign csrcommit = (commit1 & csrbit[comptr] & ~prmiss) |
-		     (commit2 & csrbit[comptr2] & ~prmiss);
+   assign stcommit = stcommit1 | (~prmiss & commit2 & storebit[comptr2]);
+   assign csrcommit = (~prmiss & commit1 & csrbit[comptr]) |
+		     (~prmiss & commit2 & csrbit[comptr2]);
    assign arfwe1 = ~prmiss & commit1 & dstvalid[comptr];
    assign arfwe2 = ~prmiss & commit2 & dstvalid[comptr2];
    assign dstarf1 = dst[comptr];
    assign dstarf2 = dst[comptr2];
-   assign combranch = (~prmiss & commit1 & isbranch[comptr]) |
-		      (~prmiss & commit2 & isbranch[comptr2]);
-   assign pc_combranch = (~prmiss & commit1 & isbranch[comptr]) ? 
-			 inst_pc[comptr] : inst_pc[comptr2];
-   assign bhr_combranch = (~prmiss & commit1 & isbranch[comptr]) ?
-			  bhr[comptr] : bhr[comptr2];
-   assign brcond_combranch = (~prmiss & commit1 & isbranch[comptr]) ?
-			     brcond[comptr] : brcond[comptr2];
-   assign jmpaddr_combranch = (~prmiss & commit1 & isbranch[comptr]) ?
-			      jmpaddr[comptr] : jmpaddr[comptr2];
+   assign combranch = combranch1 | (~prmiss & commit2 & isbranch[comptr2]);
+   assign pc_combranch = combranch1 ? inst_pc[comptr] : inst_pc[comptr2];
+   assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
+   assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];
+   assign jmpaddr_combranch = combranch1 ? jmpaddr[comptr] : jmpaddr[comptr2];
  
 
    always @ (posedge clk) begin
-      if (fetch_irq_addr) begin
+      if (irq_flush) begin
         mepc <= isbranch[next_comptr] ? jmpaddr[next_comptr] : inst_pc[next_comptr];
       end
    end
 
    always @ (posedge clk) begin
-      if (reset || fetch_irq_addr) begin
+      if (reset || irq_flush) begin
 	 comptr <= 0;
+
+     // 为什么prmiss，就不执行commit？
       end else if (~prmiss) begin
 	 comptr <= next_comptr;
       end
    end
    
    always @ (posedge clk) begin
-      if (reset || fetch_irq_addr) begin
+      if (reset || irq_flush) begin
 	 finish <= 0;
 	 brcond <= 0;
       end else begin

@@ -3,12 +3,12 @@
 module tag_generator(
 		     input wire 		    clk,
 		     input wire 		    reset,
+             input wire             irq_flush,
 		     input wire 		    branchvalid1,
 		     input wire 		    branchvalid2,
 		     input wire 		    prmiss,
 		     input wire 		    prsuccess,
 		     input wire 		    enable,
-             input wire             irq_flush,
 		     input wire [`SPECTAG_LEN-1:0]  tagregfix,
 		     output wire [`SPECTAG_LEN-1:0] sptag1,
 		     output wire [`SPECTAG_LEN-1:0] sptag2,

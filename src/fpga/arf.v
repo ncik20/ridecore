@@ -4,6 +4,7 @@ module arf
   (
    input wire 			 clk,
    input wire 			 reset,
+   input wire            irq_flush,
    input wire [`REG_SEL-1:0] 	 rs1_1, //DP from here
    input wire [`REG_SEL-1:0] 	 rs2_1,
    input wire [`REG_SEL-1:0] 	 rs1_2,
@@ -91,6 +92,7 @@ module arf
    renaming_table rt(
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .rs1_1(rs1_1),
 		     .rs2_1(rs2_1),
 		     .rs1_2(rs1_2),
@@ -159,6 +161,7 @@ module renaming_table
   (
    input wire 			 clk,
    input wire 			 reset,
+   input wire            irq_flush,
    input wire [`REG_SEL-1:0] 	 rs1_1,
    input wire [`REG_SEL-1:0] 	 rs2_1,
    input wire [`REG_SEL-1:0] 	 rs1_2,
@@ -443,7 +446,7 @@ module renaming_table
 
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 busy_0 <= 0;
 	 busy_1 <= 0;
 	 busy_2 <= 0;
@@ -565,7 +568,7 @@ module renaming_table
    end // always @ (posedge clk)
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 tag0_0 <= 0;
 	 tag1_0 <= 0;
 	 tag2_0 <= 0;

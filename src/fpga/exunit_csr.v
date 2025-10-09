@@ -4,6 +4,7 @@ module exunit_csr
   (
    input wire 			            clk,
    input wire 			            reset,
+   input wire 			            irq_flush,
    input wire [`DATA_LEN-1:0] 	    ex_src1,
    input wire [`DATA_LEN-1:0] 	    imm,
    input wire 			            dstval,
@@ -24,8 +25,8 @@ module exunit_csr
    reg [`DATA_LEN-1:0] mtvec;
    reg [`DATA_LEN-1:0] mepc;
 
-   assign rob_we = busy;
-   assign rrf_we = busy & dstval;
+   assign rob_we = busy & ~irq_flush;
+   assign rrf_we = busy & dstval & ~irq_flush;
    assign kill_speculative = ((spectag & spectagfix) != 0) && specbit && prmiss;
    assign result = (csr_op == `CSR_WRITE_NOREAD) ? 0 :
        (imm[11:0] == 12'h300) ? mstatus :

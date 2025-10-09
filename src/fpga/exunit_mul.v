@@ -4,6 +4,7 @@ module exunit_mul
   (
    input wire 			 clk,
    input wire 			 reset,
+   input wire 			 irq_flush,
    input wire [`DATA_LEN-1:0] 	 ex_src1,
    input wire [`DATA_LEN-1:0] 	 ex_src2,
    input wire 			 dstval,
@@ -23,8 +24,8 @@ module exunit_mul
 
    reg 			       busy;
    
-   assign rob_we = busy;
-   assign rrf_we = busy & dstval;
+   assign rob_we = busy & ~irq_flush;
+   assign rrf_we = busy & dstval & ~irq_flush;
    assign kill_speculative = ((spectag & spectagfix) != 0) && specbit && prmiss;
    
    always @ (posedge clk) begin

@@ -8,6 +8,7 @@
 module rrf(
 	   input wire 		       clk,
 	   input wire 		       reset,
+       input wire              irq_flush,
 	   input wire [`RRF_SEL-1:0]   rs1_1tag,
 	   input wire [`RRF_SEL-1:0]   rs2_1tag,
 	   input wire [`RRF_SEL-1:0]   rs1_2tag,
@@ -84,7 +85,7 @@ module rrf(
 					~(`RRF_NUM'b1 << dpaddr2));
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 valid <= 0;
       end else begin
 	 valid <= (valid | or_valid) & and_valid;

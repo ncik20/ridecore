@@ -544,7 +544,8 @@ module pipeline
     reg  jmpaddr_is_latch;
     reg  req_enable;
 
-    reg  irq_flush;
+    wire irq_flush;
+    //wire fetch_irq_addr;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -552,14 +553,17 @@ module pipeline
    assign idata_ok = icache_done & icache_busy;
    assign ddata_ok = cpu_res_ready && dcache_busy;
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
-   assign kill_IF = prmiss;
+   assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
+   assign irq_flush = irq & idata_ok;
 
+/*
    always @ (posedge clk) begin
 
       if (reset) irq_flush <= 1'b0;
       else if (irq && ~irq_flush) irq_flush <= 1'b1;
    end
-   
+*/
+
    always @ (posedge clk) begin
 	
       jmpaddr_is_latch <= jmpaddr_is_latch;
@@ -568,8 +572,8 @@ module pipeline
       if (reset) begin
 		 pc <= `ENTRY_POINT;
 	     jmpaddr_is_latch <= 1'b0;
-      end else if (irq_flush && idata_ok) begin
-         irq_flush <= 1'b0;
+      end else if (irq_flush) begin
+         //irq_flush <= 1'b0;
          pc <= `IRQ_POINT;
       end else if (jmpaddr_is_latch && idata_ok) begin
 		 pc <= jmpaddr_latch;
@@ -610,7 +614,7 @@ module pipeline
 		       );
 
    always @ (posedge clk) begin
-      if (reset || kill_IF || jmpaddr_is_latch || irq_flush) begin
+      if (reset || kill_IF) begin
 	    prcond_if <= 0;
 	    npc_if <= 0;
 	    pc_if <= 0;
@@ -650,12 +654,12 @@ module pipeline
    tag_generator taggen(
 			.clk(clk),
 			.reset(reset),
+            .irq_flush(irq_flush),
 			.branchvalid1(isbranch1),
 			.branchvalid2(branchvalid2),
 			.prmiss(prmiss),
 			.prsuccess(prsuccess),
 			.enable(~stall_ID & ~stall_DP),
-            .irq_flush(irq_flush),
 			.tagregfix(tagregfix),
 			.sptag1(sptag1),
 			.sptag2(sptag2),
@@ -913,16 +917,15 @@ module pipeline
 				 .src(opr2_2),
 				 .rdy(rdy2_2)
 				 );
-
-   
+ 
    rrf_freelistmanager rrf_fl(
 			      .clk(clk),
 			      .reset(reset),
+                  .irq_flush(irq_flush),
 			      .invalid1(inv1_id),
 			      .invalid2(inv2_id),
 			      .comnum(comnum),
 			      .prmiss(prmiss),
-                  .irq_flush(irq_flush),
 			      .rrftagfix(rrftagfix),
 			      .rename_dst1(dst1_renamed),
 			      .rename_dst2(dst2_renamed),
@@ -937,6 +940,7 @@ module pipeline
    arf aregfile(
 		.clk(clk),
 		.reset(reset),
+        .irq_flush(irq_flush),
 		.rs1_1(rs1_1_id),
 		.rs2_1(rs2_1_id),
 		.rs1_2(rs1_2_id),
@@ -987,6 +991,7 @@ module pipeline
    rrf rregfile(
 		.clk(clk),
 		.reset(reset),
+        .irq_flush(irq_flush),
 		.rs1_1tag(rs1_1tag),
 		.rs2_1tag(rs2_1tag),
 		.rs1_2tag(rs1_2tag),
@@ -1169,7 +1174,6 @@ module pipeline
 				 .req_csrnum(req_csrnum)
 				 );
 
-   
    //Reservation Station(with Allocate unit, Issue unit)
    //lowest bit of allocent is the selector of RS_alu1/2
    assign 		 rsalu1_we1 = ~allocent1_alu[0];
@@ -1195,9 +1199,9 @@ module pipeline
 		       ready_alu2[1],ready_alu1[1],ready_alu2[0],ready_alu1[0]
 		       };
 
-   assign 		   issue_alu1 = ~prmiss & issuevalid_alu1;
-   assign 		   issue_alu2 = ~prmiss & issuevalid_alu2;
-   
+   assign 		   issue_alu1 = ~prmiss & ~irq_flush & issuevalid_alu1;
+   assign 		   issue_alu2 = ~prmiss & ~irq_flush & issuevalid_alu2;
+ 
    allocateunit #(2*`ALU_ENT_NUM, `ALU_ENT_SEL+1) alloc_alu(
 							    .busy(busyvec_alu), //RS_BUSY
 							    //      .en1(),
@@ -1255,6 +1259,7 @@ module pipeline
 		      //System
 		      .clk(clk),
 		      .reset(reset),
+              .irq_flush(irq_flush),
 		      .busyvec(busyvec_alu1),
 		      .prmiss(prmiss),
 		      .prsuccess(prsuccess),
@@ -1337,6 +1342,7 @@ module pipeline
 		      //System
 		      .clk(clk),
 		      .reset(reset),
+              .irq_flush(irq_flush),
 		      .busyvec(busyvec_alu2),
 		      .prmiss(prmiss),
 		      .prsuccess(prsuccess),
@@ -1417,7 +1423,7 @@ module pipeline
 
 
    assign allocent2_ldst = allocent1_ldst + 1;
-   assign issue_ldst = ~prmiss & issuevalid_ldst;
+   assign issue_ldst = ~prmiss & ~irq_flush & issuevalid_ldst;
 
    alloc_issue_ino #(`LDST_ENT_SEL, `LDST_ENT_NUM) ai_ldst
      (
@@ -1441,6 +1447,7 @@ module pipeline
 		       //System
 		       .clk(clk),
 		       .reset(reset),
+               .irq_flush(irq_flush),
 		       .busyvec(busyvec_ldst),
 		       .prmiss(prmiss),
 		       .prsuccess(prsuccess),
@@ -1453,8 +1460,7 @@ module pipeline
 		       .we1(~stall_DP & ~kill_DP & req1_ldst), //alloc1
 		       .we2(~stall_DP & ~kill_DP & req2_ldst), //alloc2
 		       .waddr1(allocent1_ldst), //allocent1
-		       .waddr2(req1_ldst ? 
-			       allocent2_ldst : allocent1_ldst), //allocent2
+		       .waddr2(req1_ldst ? allocent2_ldst : allocent1_ldst), //allocent2
 		       //WriteSignal1
 		       .wpc_1(pc_id),
 		       .wsrc1_1(src1_1),
@@ -1462,7 +1468,7 @@ module pipeline
 		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
 		       .wvalid2_1(~uses_rs2_1_id | resolved2_1),
 		       .wimm_1(imm1),
-             .wdmem_type_1(dmem_type_1_id),
+               .wdmem_type_1(dmem_type_1_id),
 		       .wrrftag_1(dst1_renamed),
 		       .wdstval_1(wr_reg_1_id),
 		       .wspectag_1(sptag1_id),
@@ -1474,7 +1480,7 @@ module pipeline
 		       .wvalid1_2(~uses_rs1_2_id | resolved1_2),
 		       .wvalid2_2(~uses_rs2_2_id | resolved2_2),
 		       .wimm_2(imm2),
-             .wdmem_type_2(dmem_type_2_id),
+               .wdmem_type_2(dmem_type_2_id),
 		       .wrrftag_2(dst2_renamed),
 		       .wdstval_2(wr_reg_2_id),
 		       .wspectag_2(sptag2_id),
@@ -1485,7 +1491,7 @@ module pipeline
 		       .ready(ready_ldst),
 		       .pc(pc_ldst),
 		       .imm(imm_ldst),
-             .dmem_type(funct3_ldst),
+               .dmem_type(funct3_ldst),
 		       .rrftag(rrftag_ldst),
 		       .dstval(dstval_ldst),
 		       .spectag(spectag_ldst),
@@ -1513,7 +1519,7 @@ module pipeline
 
 
    assign allocent2_branch = allocent1_branch + 1;
-   assign issue_branch = ~prmiss & issuevalid_branch;
+   assign issue_branch = ~prmiss & ~irq_flush & issuevalid_branch;
    
    alloc_issue_ino ai_branch(
 			     .clk(clk),
@@ -1536,6 +1542,7 @@ module pipeline
 			   //System
 			   .clk(clk),
 			   .reset(reset),
+               .irq_flush(irq_flush),
 			   .busyvec(busyvec_branch),
 			   .prmiss(prmiss),
 			   .prsuccess(prsuccess),
@@ -1548,8 +1555,7 @@ module pipeline
 			   .we1(~stall_DP & ~kill_DP & req1_branch), //alloc1
 			   .we2(~stall_DP & ~kill_DP & req2_branch), //alloc2
 			   .waddr1(allocent1_branch), //allocent1
-			   .waddr2(req1_branch ? 
-				   allocent2_branch : allocent1_branch), //allocent2
+			   .waddr2(req1_branch ? allocent2_branch : allocent1_branch), //allocent2
 			   //WriteSignal1
 			   .wpc_1(pc_id),
 			   .wsrc1_1(src1_1),
@@ -1618,7 +1624,7 @@ module pipeline
 			   .kill_spec6(kill_speculative_csr | ~robwe_csr)
 			   );
 
-   assign issue_mul = ~prmiss & issuevalid_mul;
+   assign issue_mul = ~prmiss & ~irq_flush & issuevalid_mul;
 
    allocateunit #(`MUL_ENT_NUM, `MUL_ENT_SEL) alloc_mul(
 							.busy(busyvec_mul), //RS_BUSY
@@ -1640,6 +1646,7 @@ module pipeline
 		     //System
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .busyvec(busyvec_mul),
 		     .prmiss(prmiss),
 		     .prsuccess(prsuccess),
@@ -1651,8 +1658,7 @@ module pipeline
 		     .we1(~stall_DP & ~kill_DP & req1_mul), //alloc1
 		     .we2(~stall_DP & ~kill_DP & req2_mul), //alloc2
 		     .waddr1(allocent1_mul), //allocent1
-		     .waddr2(req1_mul ? 
-			     allocent2_mul : allocent1_mul), //allocent2
+		     .waddr2(req1_mul ? allocent2_mul : allocent1_mul), //allocent2
 		     //WriteSignal1
 		     .wsrc1_1(src1_1),
 		     .wsrc2_1(src2_1),
@@ -1710,7 +1716,7 @@ module pipeline
 		     );
    
    assign allocent2_csr = allocent1_csr + 1;
-   assign issue_csr = ~prmiss & issuevalid_csr;
+   assign issue_csr = ~prmiss & ~irq_flush & issuevalid_csr;
 
    alloc_issue_ino #(`CSR_ENT_SEL, `CSR_ENT_NUM) ai_csr
      (
@@ -1734,6 +1740,7 @@ module pipeline
 		       //System
 		       .clk(clk),
 		       .reset(reset),
+               .irq_flush(irq_flush),
 		       .busyvec(busyvec_csr),
 		       .prmiss(prmiss),
 		       .prsuccess(prsuccess),
@@ -1746,8 +1753,7 @@ module pipeline
 		       .we1(~stall_DP & ~kill_DP & req1_csr), //alloc1
 		       .we2(~stall_DP & ~kill_DP & req2_csr), //alloc2
 		       .waddr1(allocent1_csr), //allocent1
-		       .waddr2(req1_csr ? 
-			       allocent2_csr : allocent1_csr), //allocent2
+		       .waddr2(req1_csr ? allocent2_csr : allocent1_csr), //allocent2
 		       //WriteSignal1
 		       .wsrc1_1(uses_rs1_1_id ? src1_1 : { {27{1'b0}}, rs1_1_id[4:0] }),
 		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
@@ -1829,6 +1835,7 @@ module pipeline
    exunit_alu byakko(
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu1),
 		     .ex_src2(buf_ex_src2_alu1),
 		     .pc(buf_pc_alu1),
@@ -1879,6 +1886,7 @@ module pipeline
    exunit_alu suzaku(
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu2),
 		     .ex_src2(buf_ex_src2_alu2),
 		     .pc(buf_pc_alu2),
@@ -1904,7 +1912,7 @@ module pipeline
 	 buf_ex_src2_ldst <= 0;
 	 buf_pc_ldst <= 0;
 	 buf_imm_ldst <= 0;
-    buf_funct3_ldst <= 0;
+     buf_funct3_ldst <= 0;
 	 buf_rrftag_ldst <= 0;
 	 buf_dstval_ldst <= 0;
 	 buf_spectag_ldst <= 0;
@@ -1914,7 +1922,7 @@ module pipeline
 	 buf_ex_src2_ldst <= ex_src2_ldst;
 	 buf_pc_ldst <= pc_ldst;
 	 buf_imm_ldst <= imm_ldst;
-    buf_funct3_ldst <= funct3_ldst;
+     buf_funct3_ldst <= funct3_ldst;
 	 buf_rrftag_ldst <= rrftag_ldst;
 	 buf_dstval_ldst <= dstval_ldst;
 	 buf_spectag_ldst <= spectag_ldst;
@@ -2046,6 +2054,7 @@ module pipeline
    exunit_ldst seiryu(
 		      .clk(clk),
 		      .reset(reset),
+              .irq_flush(irq_flush),
 		      .ex_src1(buf_ex_src1_ldst),
 		      .ex_src2(buf_ex_src2_ldst),
 		      .pc(buf_pc_ldst),
@@ -2108,6 +2117,7 @@ module pipeline
    exunit_mul genbu (
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_mul),
 		     .ex_src2(buf_ex_src2_mul),
 		     .dstval(buf_dstval_mul),
@@ -2148,6 +2158,7 @@ module pipeline
    exunit_csr csr_ex (
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_csr),
 		     .imm(buf_imm_csr),
 		     .dstval(buf_dstval_csr),
@@ -2194,6 +2205,7 @@ module pipeline
    exunit_branch kirin(
 		       .clk(clk),
 		       .reset(reset),
+               .irq_flush(irq_flush),
 		       .ex_src1(buf_ex_src1_branch),
 		       .ex_src2(buf_ex_src2_branch),
 		       .pc(buf_pc_branch),
@@ -2235,6 +2247,7 @@ module pipeline
    reorderbuf rob(
 		  .clk(clk),
 		  .reset(reset),
+          .irq_flush(irq_flush),
 		  .dp1(~stall_DP & ~kill_DP & ~inv1_id),
 		  .dp1_addr(dst1_renamed),
 		  .pc_dp1(pc_id),

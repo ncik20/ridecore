@@ -6,6 +6,7 @@ module exunit_branch
   (
    input wire 			  clk,
    input wire 			  reset,
+   input wire 			  irq_flush,
    input wire [`DATA_LEN-1:0] 	  ex_src1,
    input wire [`DATA_LEN-1:0] 	  ex_src2,
    input wire [`ADDR_LEN-1:0] 	  pc,

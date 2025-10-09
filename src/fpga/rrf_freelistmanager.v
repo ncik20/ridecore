@@ -4,11 +4,11 @@ module rrf_freelistmanager
   (
    input wire 		      clk,
    input wire 		      reset,
+   input wire             irq_flush,
    input wire 		      invalid1,
    input wire 		      invalid2,
    input wire [1:0] 	  comnum,
    input wire 		      prmiss,
-   input wire             irq_flush,
    input wire [`RRF_SEL-1:0]  rrftagfix,
    output wire [`RRF_SEL-1:0] rename_dst1,
    output wire [`RRF_SEL-1:0] rename_dst2,
