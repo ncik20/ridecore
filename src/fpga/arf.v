@@ -57,11 +57,11 @@ module arf
    
    wire 			 we2_0reg = we2 && 
 				 (wreg2 != `REG_SEL'b0);
-   
+/*   
    wire 			 we1_prior2 = ((wreg1 == wreg2) &&
 					       we1_0reg && we2_0reg) ? 
 				 1'b0 : we1_0reg;
-   
+*/   
    // Set priority on instruction2 WriteBack
    // we when wrrfent1 == comreg1_tag
    ram_sync_nolatch_4r2w

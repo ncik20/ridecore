@@ -8,6 +8,7 @@ module tag_generator(
 		     input wire 		    prmiss,
 		     input wire 		    prsuccess,
 		     input wire 		    enable,
+             input wire             irq_flush,
 		     input wire [`SPECTAG_LEN-1:0]  tagregfix,
 		     output wire [`SPECTAG_LEN-1:0] sptag1,
 		     output wire [`SPECTAG_LEN-1:0] sptag2,
@@ -32,7 +33,7 @@ module tag_generator(
      > (`BRANCH_ENT_NUM + prsuccess) ? 1'b0 : 1'b1;
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 tagreg <= `SPECTAG_LEN'b1;
 	 brdepth <= `BRDEPTH_LEN'b0;
       end else begin

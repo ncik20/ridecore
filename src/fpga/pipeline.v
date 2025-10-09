@@ -21,6 +21,8 @@ module pipeline
    input wire                       icache_done,
    input wire                       icache_busy,
 
+   input wire                       irq,
+
    input wire [4:0] raddr4test,
    output wire [31:0] rdata4test
    );
@@ -527,8 +529,8 @@ module pipeline
 
     
     wire dcache_busy;
-    reg dcache_r_req;
-    reg dcache_w_req;
+    reg  dcache_r_req;
+    reg  dcache_w_req;
 
     wire avm_m0_write;
     wire avm_m0_read;
@@ -542,6 +544,8 @@ module pipeline
     reg  jmpaddr_is_latch;
     reg  req_enable;
 
+    reg  irq_flush;
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
@@ -549,6 +553,12 @@ module pipeline
    assign ddata_ok = cpu_res_ready && dcache_busy;
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss;
+
+   always @ (posedge clk) begin
+
+      if (reset) irq_flush <= 1'b0;
+      else if (irq && ~irq_flush) irq_flush <= 1'b1;
+   end
    
    always @ (posedge clk) begin
 	
@@ -558,6 +568,9 @@ module pipeline
       if (reset) begin
 		 pc <= `ENTRY_POINT;
 	     jmpaddr_is_latch <= 1'b0;
+      end else if (irq_flush && idata_ok) begin
+         irq_flush <= 1'b0;
+         pc <= `IRQ_POINT;
       end else if (jmpaddr_is_latch && idata_ok) begin
 		 pc <= jmpaddr_latch;
          jmpaddr_is_latch <= 1'b0; 
@@ -597,7 +610,7 @@ module pipeline
 		       );
 
    always @ (posedge clk) begin
-      if (reset | kill_IF | jmpaddr_is_latch) begin
+      if (reset || kill_IF || jmpaddr_is_latch || irq_flush) begin
 	    prcond_if <= 0;
 	    npc_if <= 0;
 	    pc_if <= 0;
@@ -625,7 +638,7 @@ module pipeline
 //   assign stall_ID = stall_DP | ~attachable | (prsuccess & (isbranch1 | isbranch2));
 //   assign kill_ID = prmiss;
    assign stall_ID = ~attachable | prsuccess;
-   assign kill_ID = (stall_ID & ~stall_DP) | prmiss;
+   assign kill_ID = (stall_ID & ~stall_DP) | prmiss | irq_flush;
    
    assign isbranch1 = (~inv1_if && (rs_ent_1 == `RS_ENT_BRANCH)) ?
 		      1'b1 : 1'b0;
@@ -642,6 +655,7 @@ module pipeline
 			.prmiss(prmiss),
 			.prsuccess(prsuccess),
 			.enable(~stall_ID & ~stall_DP),
+            .irq_flush(irq_flush),
 			.tagregfix(tagregfix),
 			.sptag1(sptag1),
 			.sptag2(sptag2),
@@ -846,7 +860,7 @@ module pipeline
    assign stall_DP = ~allocatable_alu | ~allocatable_ldst |
 		     ~allocatable_mul | ~allocatable_branch | ~allocatable_csr | ~alloc_rrf | prsuccess;
 
-   assign kill_DP = prmiss;
+   assign kill_DP = prmiss | irq_flush;
    
    sourceoperand_manager sopm1_1(
 				 .arfdata(adat1_1),
@@ -908,6 +922,7 @@ module pipeline
 			      .invalid2(inv2_id),
 			      .comnum(comnum),
 			      .prmiss(prmiss),
+                  .irq_flush(irq_flush),
 			      .rrftagfix(rrftagfix),
 			      .rename_dst1(dst1_renamed),
 			      .rename_dst2(dst2_renamed),

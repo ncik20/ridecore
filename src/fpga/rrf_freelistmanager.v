@@ -6,8 +6,9 @@ module rrf_freelistmanager
    input wire 		      reset,
    input wire 		      invalid1,
    input wire 		      invalid2,
-   input wire [1:0] 	      comnum,
+   input wire [1:0] 	  comnum,
    input wire 		      prmiss,
+   input wire             irq_flush,
    input wire [`RRF_SEL-1:0]  rrftagfix,
    output wire [`RRF_SEL-1:0] rename_dst1,
    output wire [`RRF_SEL-1:0] rename_dst2,
@@ -28,7 +29,7 @@ module rrf_freelistmanager
    assign rename_dst2 = rrfptr + (~invalid1 ? 1 : 0);
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 freenum <= `RRF_NUM;
 	 rrfptr <= 0;
 	 nextrrfcyc <= 0;

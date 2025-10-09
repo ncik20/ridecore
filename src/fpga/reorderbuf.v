@@ -83,6 +83,8 @@ module reorderbuf
 				  ~(commit1 & storebit[comptr] & ~prmiss) &
 				  commit1 & com_en2 & finish[comptr2];
 
+   wire [`RRF_SEL-1:0] next_comptr = comptr + commit1 + commit2;
+
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
    assign stcommit = (commit1 & storebit[comptr] & ~prmiss) |
 		     (commit2 & storebit[comptr2] & ~prmiss);
@@ -102,18 +104,24 @@ module reorderbuf
 			     brcond[comptr] : brcond[comptr2];
    assign jmpaddr_combranch = (~prmiss & commit1 & isbranch[comptr]) ?
 			      jmpaddr[comptr] : jmpaddr[comptr2];
-   
+ 
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (fetch_irq_addr) begin
+        mepc <= isbranch[next_comptr] ? jmpaddr[next_comptr] : inst_pc[next_comptr];
+      end
+   end
+
+   always @ (posedge clk) begin
+      if (reset || fetch_irq_addr) begin
 	 comptr <= 0;
       end else if (~prmiss) begin
-	 comptr <= comptr + commit1 + commit2;
+	 comptr <= next_comptr;
       end
    end
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || fetch_irq_addr) begin
 	 finish <= 0;
 	 brcond <= 0;
       end else begin
