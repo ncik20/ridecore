@@ -23,6 +23,7 @@ module miss_prediction_fix_table
   (
    input wire 			  clk,
    input wire 			  reset,
+   input wire 			  irq_flush,
    output reg [`SPECTAG_LEN-1:0]  mpft_valid,
    input wire [`SPECTAG_LEN-1:0]  value_addr,
    output wire [`SPECTAG_LEN-1:0] mpft_value,
@@ -120,7 +121,7 @@ module miss_prediction_fix_table
 				  (prsuccess_tag[4] ? 5'b0 : ~prsuccess_tag);
    
    always @ (posedge clk) begin
-      if (reset | prmiss) begin
+      if (reset || prmiss || irq_flush) begin
 	 mpft_valid <= 0;
       end else if (prsuccess) begin
 	 mpft_valid <= mpft_valid & ~prsuccess_tag;
@@ -132,7 +133,7 @@ module miss_prediction_fix_table
    end
 
    always @ (posedge clk) begin
-      if (reset | prmiss) begin
+      if (reset || prmiss || irq_flush) begin
 	 value0 <= 0;
 	 value1 <= 0;
 	 value2 <= 0;

@@ -545,7 +545,7 @@ module pipeline
     reg  req_enable;
 
     wire irq_flush;
-    //wire fetch_irq_addr;
+    wire [`ADDR_LEN-1:0]    irq_jmpaddr;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -566,8 +566,8 @@ module pipeline
 
    always @ (posedge clk) begin
 	
-      jmpaddr_is_latch <= jmpaddr_is_latch;
-      jmpaddr_latch <= jmpaddr_latch;
+      // jmpaddr_is_latch <= jmpaddr_is_latch;
+      // jmpaddr_latch <= jmpaddr_latch;
 
       if (reset) begin
 		 pc <= `ENTRY_POINT;
@@ -580,7 +580,7 @@ module pipeline
          jmpaddr_is_latch <= 1'b0; 
       end else if (prmiss && idata_ok) begin
 		 pc <= jmpaddr;
-      end else if (prmiss && !jmpaddr_is_latch) begin
+      end else if (prmiss && ~jmpaddr_is_latch) begin
          jmpaddr_latch <= jmpaddr;
          jmpaddr_is_latch <= 1'b1;
       end else if (stall_IF) begin
@@ -1429,6 +1429,7 @@ module pipeline
      (
       .clk(clk),
       .reset(reset),
+      .irq_flush(irq_flush),
       .reqnum(req_ldstnum),
       .busyvec(busyvec_ldst),
       .prbusyvec_next(prbusyvec_next_ldst),
@@ -1524,6 +1525,7 @@ module pipeline
    alloc_issue_ino ai_branch(
 			     .clk(clk),
 			     .reset(reset),
+                 .irq_flush(irq_flush),
 			     .reqnum(req_branchnum),
 			     .busyvec(busyvec_branch),
 			     .prbusyvec_next(prbusyvec_next_branch),
@@ -1722,6 +1724,7 @@ module pipeline
      (
       .clk(clk),
       .reset(reset),
+      .irq_flush(irq_flush),
       .reqnum(req_csrnum),
       .busyvec(busyvec_csr),
       .prbusyvec_next(prbusyvec_next_csr),
@@ -1835,7 +1838,6 @@ module pipeline
    exunit_alu byakko(
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu1),
 		     .ex_src2(buf_ex_src2_alu1),
 		     .pc(buf_pc_alu1),
@@ -1886,7 +1888,6 @@ module pipeline
    exunit_alu suzaku(
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu2),
 		     .ex_src2(buf_ex_src2_alu2),
 		     .pc(buf_pc_alu2),
@@ -2117,7 +2118,6 @@ module pipeline
    exunit_mul genbu (
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_mul),
 		     .ex_src2(buf_ex_src2_mul),
 		     .dstval(buf_dstval_mul),
@@ -2167,7 +2167,9 @@ module pipeline
 		     .specbit(buf_specbit_csr),
 		     .issue(issue_csr),
 		     .prmiss(prmiss),
+		     .csrcommit(csrcommit),
 		     .spectagfix(spectagfix),
+             .irq_jmpaddr(irq_jmpaddr),
 		     .result(result_csr),
 		     .rrf_we(rrfwe_csr),
 		     .rob_we(robwe_csr),
@@ -2231,6 +2233,7 @@ module pipeline
    miss_prediction_fix_table mpft(
 				  .clk(clk),
 				  .reset(reset),
+                  .irq_flush(irq_flush),
 				  .mpft_valid(mpft_valid),
 				  .value_addr(buf_spectag_branch),
 				  .mpft_value(spectagfix),
@@ -2295,6 +2298,7 @@ module pipeline
 		  .brcond_combranch(brcond_combranch),
 		  .jmpaddr_combranch(jmpaddr_combranch),
 		  .combranch(combranch),
+          .irq_jmpaddr(irq_jmpaddr),
 		  .dispatchptr(rrfptr),
 		  .rrf_freenum(freenum),
 		  .prmiss(prmiss)

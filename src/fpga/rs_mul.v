@@ -155,6 +155,7 @@ module rs_mul
    //System
    input wire 			  clk,
    input wire 			  reset,
+   input wire 			  irq_flush,
    output reg [`MUL_ENT_NUM-1:0]  busyvec,
    input wire 			  prmiss,
    input wire 			  prsuccess,
@@ -270,7 +271,7 @@ module rs_mul
    assign ready = {ready_1, ready_0};
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 busyvec <= 0;
 	 specbitvec <= 0;
       end else begin

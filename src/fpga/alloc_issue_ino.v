@@ -9,6 +9,7 @@ module alloc_issue_ino  #(
    (
     input wire 		     clk,
     input wire 		     reset,
+    input wire 			 irq_flush,
     input wire [1:0] 	     reqnum,
     input wire [ENTNUM-1:0]  busyvec,
     input wire [ENTNUM-1:0]  prbusyvec_next,
@@ -83,7 +84,7 @@ module alloc_issue_ino  #(
 			((~busyvec[allocptr] && ~busyvec[allocptr2]) ? 1'b1 : 1'b0);
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 allocptr <= 0;
       end else if (prmiss) begin
 	 allocptr <= ~notfull_next ? allocptr :

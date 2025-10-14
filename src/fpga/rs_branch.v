@@ -173,6 +173,7 @@ module rs_branch
    //System
    input wire 			     clk,
    input wire 			     reset,
+   input wire 			     irq_flush,
    output reg [`BRANCH_ENT_NUM-1:0]  busyvec,
    input wire 			     prmiss,
    input wire 			     prsuccess,
@@ -341,7 +342,7 @@ module rs_branch
    assign prbusyvec_next = inv_vector & busyvec;
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 busyvec <= 0;
 	 specbitvec <= 0;
       end else begin

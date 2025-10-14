@@ -101,7 +101,9 @@ module exunit_ldst
    assign rob_we = insnvalid_latch;
    assign wrrftag = rrftag_latch;
    assign busy_next = clearbusy ? 1'b0 : busy;
-   assign stfin = ~killspec1 & busy & ~dstval;
+   // stfin如果fullsb了，就一直是真，不会导致sb里的finptr一直自增？
+   // assign stfin = ~killspec1 & busy & ~dstval;
+   assign stfin = ~killspec1 & busy & ~dstval & ~fullsb;
    // load的时候，写dmem，可能因为storebuffer的valid置0导致找不到，从dmem取，又因为store的值还未写入dmem，导致load取到旧值
    // 非load写dmem，也是以写dmem只需1个cycle为前提，实际写下级存储，要考虑大于1cycle的情况
    assign memoccupy_ld = ~killspec1 & busy & dstval & ~sb_ld_ok;
@@ -142,19 +144,16 @@ module exunit_ldst
 	 insnvalid_latch <= ~killspec1 & ((busy & ld_ok) |
 					  (busy & ~dstval & ~fullsb));
 	 // insnvalid_latch <= ~killspec1 & ((busy & dstval) |
-	 //				  (busy & ~dstval & ~fullsb));                  
+	 //				  (busy & ~dstval & ~fullsb));
       end
    end // always @ (posedge clk)
 
    always @ (posedge clk) begin
-      if (reset || killspec1) begin
+      if (reset || killspec1 || irq_flush) begin
         busy <= 0;
       end else begin
         busy <= issue | busy_next;
       end
-
-      //if (memoccupy_ld) cache_req <= 1'b1;
-      //else cache_req <= 1'b0;
    end
 
 endmodule // exunit_ldst

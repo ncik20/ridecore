@@ -4,6 +4,7 @@ module storebuf
   (
    input wire 			 clk,
    input wire 			 reset,
+   input wire            irq_flush,
    input wire 			 prsuccess,
    input wire 			 prmiss,
    input wire [`SPECTAG_LEN-1:0] prtag,
@@ -41,6 +42,7 @@ module storebuf
    reg [`DATA_LEN-1:0] 			 data [0:`STBUF_ENT_NUM-1];
    reg [`ADDR_LEN-1:0] 			 addr [0:`STBUF_ENT_NUM-1];
    reg [`MEM_TYPE_WIDTH-1:0] 	 funct3 [0:`STBUF_ENT_NUM-1];
+   wire [`STBUF_ENT_NUM-1:0] 	 completed_new;
 
    //when prsuccess, specbit_next = specbit & specbitcls
    wire [`STBUF_ENT_NUM-1:0] 	 specbit_cls;
@@ -110,6 +112,14 @@ module storebuf
 	end
    endgenerate
 
+   generate
+      genvar 			 j;
+      for (j = 0 ; j < `STBUF_ENT_NUM ; j = j + 1) 
+	begin: L2
+	   assign completed_new[j] = (j == comptr) ? 1'b1 : completed[j];
+	end
+   endgenerate
+
    always @ (posedge clk) begin
       if (~reset & stfin) begin
 	 data[finptr] <= stdata;
@@ -118,7 +128,7 @@ module storebuf
 	 spectag[finptr] <= stspectag;
       end
    end
-   
+
    always @ (posedge clk) begin
       if (reset) begin
 	 finptr <= 0;
@@ -126,6 +136,17 @@ module storebuf
 	 retptr <= 0;
 	 valid <= 0;
 	 completed <= 0;
+      end else if (irq_flush) begin
+	    if (stcom) begin
+	        valid <= valid & completed_new;
+	        completed[comptr] <= 1'b1;
+
+	        comptr <= comptr + 1;
+            finptr <= comptr + 1;
+        end else begin
+	        valid <= valid & completed;
+            finptr <= comptr;
+        end
       end else if (prmiss) begin
 	 if (stfin) begin
 	    //KillNotOccur!!!
@@ -152,6 +173,9 @@ module storebuf
 	 end
 
      //if (dcache.cpu_res_ready) begin
+     // 如果此时发生prmiss，这样dmem_w_done[1]就错过了，不会有问题？
+     // 是不是就会再申请一次写入？
+     // 好像是的
 	 if (dmem_w_done[1]) begin
 	    retptr <= retptr + 1;
 	    valid[retptr] <= 1'b0;

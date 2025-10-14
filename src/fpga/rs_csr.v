@@ -110,6 +110,7 @@ module rs_csr
    //System
    input wire 			  clk,
    input wire 			  reset,
+   input wire 			  irq_flush,
    output reg [`CSR_ENT_NUM-1:0]  busyvec,
    input wire 			  prmiss,
    input wire 			  prsuccess,
@@ -142,9 +143,6 @@ module rs_csr
    input wire 			  wdstval_2,
    input wire [`SPECTAG_LEN-1:0] 	  wspectag_2,
    input wire 			  wspecbit_2,
-   input wire 			  wsrc1_signed_2,
-   input wire 			  wsrc2_signed_2,
-   input wire 			  wsel_lohi_2,
 
    //ReadSignal
    output wire [`DATA_LEN-1:0] 	  ex_src1,
@@ -199,6 +197,7 @@ module rs_csr
    reg [`CSR_ENT_NUM-1:0] 	  specbitvec;
 
    reg [`SPECTAG_LEN-1:0]   csr_spectag;
+   reg                      csr_specbit;
    reg                      csr_excute;
    reg                      ready_0_;
    reg                      ready_1_;
@@ -224,28 +223,31 @@ module rs_csr
    assign prbusyvec_next = inv_vector & busyvec;
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
           csr_excute <= 0;
           ready_0_ <= 0;
           ready_1_ <= 0;
           //csr_spectag <= 0;
-      end else if (prmiss && csr_excute && (csr_spectag & specfixtag)) begin
+      end else if (csr_excute && ((csr_spectag & specfixtag) != 0) && csr_specbit && prmiss) begin
           csr_excute <= 0;
       end else if (~prmiss && ~csr_excute && (we1 || we2 || |busyvec)) begin
           csr_excute <= 1'b1;
 
           if (|busyvec) begin
               csr_spectag <= rrftag;
+              csr_specbit <= spectag;
 
               if (issueaddr == 0) ready_0_ <= 1'b1;
               else ready_1_ <= 1'b1;
           end else if (we1) begin
               csr_spectag <= wspectag_1;
+              csr_specbit <= wspecbit_1;
 
               if (waddr1 == 0) ready_0_ <= 1'b1;
               else ready_1_ <= 1'b1;
           end else begin
               csr_spectag <= wspectag_2;
+              csr_specbit <= wspecbit_2;
 
               if (waddr2 == 0) ready_0_ <= 1'b1;
               else ready_1_ <= 1'b1;
@@ -322,7 +324,7 @@ module rs_csr
 
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 busyvec <= 0;
 	 specbitvec <= 0;
       end else begin

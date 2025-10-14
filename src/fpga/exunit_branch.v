@@ -6,7 +6,7 @@ module exunit_branch
   (
    input wire 			  clk,
    input wire 			  reset,
-   input wire 			  irq_flush,
+   input wire             irq_flush,
    input wire [`DATA_LEN-1:0] 	  ex_src1,
    input wire [`DATA_LEN-1:0] 	  ex_src2,
    input wire [`ADDR_LEN-1:0] 	  pc,
@@ -35,11 +35,11 @@ module exunit_branch
    wire 		       addrmatch = (jmpaddr == praddr) ? 1'b1 : 1'b0;
 
    
-   assign rob_we = busy;
-   assign rrf_we = busy & dstval;
+   assign rob_we = busy & ~irq_flush;
+   assign rrf_we = busy & dstval & ~irq_flush;
    assign result = pc + 4;
-   assign prsuccess = busy & addrmatch;
-   assign prmiss = busy & ~addrmatch;
+   assign prsuccess = busy & addrmatch & ~irq_flush;
+   assign prmiss = busy & ~addrmatch & ~irq_flush; //为了不影响commit指令更新arf的busy位，添加irq_flush条件
    assign jmpaddr = brcond ? jmpaddr_taken : (pc + 4);
    assign jmpaddr_taken = (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
    

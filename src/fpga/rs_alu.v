@@ -164,6 +164,7 @@ module rs_alu
    //System
    input wire 				       clk,
    input wire 				       reset,
+   input wire 				       irq_flush,
    output reg [`ALU_ENT_NUM-1:0] 	       busyvec,
    input wire 				       prmiss,
    input wire 				       prsuccess,
@@ -395,7 +396,7 @@ module rs_alu
 		      };
 
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 sortbit <= `ALU_ENT_NUM'b1;
       end else if (nextrrfcyc) begin
 	 sortbit <= (we1 ? (`ALU_ENT_NUM'b1 << waddr1) : `ALU_ENT_NUM'b0) |
@@ -411,7 +412,7 @@ module rs_alu
    end
    
    always @ (posedge clk) begin
-      if (reset) begin
+      if (reset || irq_flush) begin
 	 busyvec <= 0;
 	 specbitvec <= 0;
       end else begin

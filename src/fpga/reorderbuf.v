@@ -53,6 +53,7 @@ module reorderbuf
    output wire 			  brcond_combranch,
    output wire [`ADDR_LEN-1:0] 	  jmpaddr_combranch,
    output wire 			  combranch,
+   output wire [`ADDR_LEN-1:0] 	  irq_jmpaddr,
    input wire [`RRF_SEL-1:0] 	  dispatchptr,
    input wire [`RRF_SEL:0] 	  rrf_freenum,
    input wire 			  prmiss
@@ -69,7 +70,10 @@ module reorderbuf
    reg [`ADDR_LEN-1:0] 		  jmpaddr [0:`RRF_NUM-1];   
    reg [`REG_SEL-1:0] 		  dst [0:`RRF_NUM-1];
    reg [`GSH_BHR_LEN-1:0] 	  bhr [0:`RRF_NUM-1];
-   
+
+   wire 			          commit2;
+   wire [`RRF_SEL-1:0]        next_comptr;
+
    assign comptr2 = comptr+1;
    
    wire 			  hidp = (comptr > dispatchptr) || (rrf_freenum == 0) ? 1'b1 : 1'b0;
@@ -78,14 +82,11 @@ module reorderbuf
    wire 			  commit1 = com_en1 & finish[comptr];
    //   wire commit2 = commit1 & com_en2 & finish[comptr2];
 
-   wire 			  commit2 = ~combranch1 & ~stcommit1 & commit1 & 
-                                com_en2 & finish[comptr2];
-
    wire               combranch1 = ~prmiss & commit1 & isbranch[comptr];
    wire               stcommit1 = ~prmiss & commit1 & storebit[comptr];
 
-   wire [`RRF_SEL-1:0] next_comptr = comptr + commit1 + commit2;
-
+   assign commit2 = ~combranch1 & ~stcommit1 & commit1 & com_en2 & finish[comptr2];
+   assign next_comptr = comptr + commit1 + commit2;
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
    assign stcommit = stcommit1 | (~prmiss & commit2 & storebit[comptr2]);
    assign csrcommit = (~prmiss & commit1 & csrbit[comptr]) |
@@ -99,24 +100,26 @@ module reorderbuf
    assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
    assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];
    assign jmpaddr_combranch = combranch1 ? jmpaddr[comptr] : jmpaddr[comptr2];
- 
 
-   always @ (posedge clk) begin
-      if (irq_flush) begin
-        mepc <= isbranch[next_comptr] ? jmpaddr[next_comptr] : inst_pc[next_comptr];
-      end
-   end
+   // next_comptr-1是最后一条commit的指令，如果是分支且跳转，那返回地址应
+   // 该是跳转地址，否则就返回下一条commit指令的pc
+   assign irq_jmpaddr = (isbranch[next_comptr-1] && brcond[next_comptr-1]) ? 
+       jmpaddr[next_comptr-1] : inst_pc[next_comptr];
 
    always @ (posedge clk) begin
       if (reset || irq_flush) begin
 	 comptr <= 0;
 
      // 为什么prmiss，就不执行commit？
+     // 似乎没有理由，prmiss前的指令，应该可以commit
+     // 之后的指令，包括产生prmiss的分支指令，在本cycle，finish都是0，也不可能commit
+     // commit会更新arf的busy位，同时如果发生prmiss，则会恢复busy位，所以不能
+     // 执行commit 
       end else if (~prmiss) begin
 	 comptr <= next_comptr;
       end
    end
-   
+ 
    always @ (posedge clk) begin
       if (reset || irq_flush) begin
 	 finish <= 0;
