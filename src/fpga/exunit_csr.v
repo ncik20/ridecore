@@ -19,7 +19,9 @@ module exunit_csr
    output wire [`DATA_LEN-1:0] 	    result,
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
-   output wire 			            kill_speculative
+   output wire 			            kill_speculative,
+
+   output wire                      mie
    );
 
    reg 			       busy;
@@ -34,6 +36,8 @@ module exunit_csr
        (imm[11:0] == 12'h300) ? mstatus :
        (imm[11:0] == 12'h305) ? mtvec   :
        (imm[11:0] == 12'h341) ? mepc    : 0;
+
+   assign mie = mstatus[3];
 
    always @ (posedge clk) begin
       if (reset) begin
@@ -70,7 +74,10 @@ module exunit_csr
       endcase
       end
 
-      if (irq_flush) mepc <= irq_jmpaddr;
+      if (irq_flush) begin
+        mepc <= irq_jmpaddr;
+        mstatus[3] = 1'b0;
+      end
    end
    
 endmodule // exunit_csr

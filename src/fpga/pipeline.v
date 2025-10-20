@@ -547,6 +547,8 @@ module pipeline
     wire irq_flush;
     wire [`ADDR_LEN-1:0]    irq_jmpaddr;
 
+    wire mie;
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
@@ -554,7 +556,7 @@ module pipeline
    assign ddata_ok = cpu_res_ready && dcache_busy;
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
-   assign irq_flush = irq & idata_ok;
+   assign irq_flush = irq & mie & idata_ok;
 
 /*
    always @ (posedge clk) begin
@@ -2173,7 +2175,9 @@ module pipeline
 		     .result(result_csr),
 		     .rrf_we(rrfwe_csr),
 		     .rob_we(robwe_csr),
-		     .kill_speculative(kill_speculative_csr)
+		     .kill_speculative(kill_speculative_csr),
+
+             .mie(mie)
 		     );
 
    always @ (posedge clk) begin

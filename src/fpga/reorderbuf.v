@@ -88,11 +88,11 @@ module reorderbuf
    assign commit2 = ~combranch1 & ~stcommit1 & commit1 & com_en2 & finish[comptr2];
    assign next_comptr = comptr + commit1 + commit2;
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
-   assign stcommit = stcommit1 | (~prmiss & commit2 & storebit[comptr2]);
-   assign csrcommit = (~prmiss & commit1 & csrbit[comptr]) |
-		     (~prmiss & commit2 & csrbit[comptr2]);
-   assign arfwe1 = ~prmiss & commit1 & dstvalid[comptr];
-   assign arfwe2 = ~prmiss & commit2 & dstvalid[comptr2];
+   assign stcommit = (stcommit1 | (~prmiss & commit2 & storebit[comptr2])) & ~irq_flush;
+   assign csrcommit = ((~prmiss & commit1 & csrbit[comptr]) |
+		     (~prmiss & commit2 & csrbit[comptr2])) & ~irq_flush;
+   assign arfwe1 = ~prmiss & commit1 & dstvalid[comptr] & ~irq_flush;
+   assign arfwe2 = ~prmiss & commit2 & dstvalid[comptr2] & ~irq_flush;
    assign dstarf1 = dst[comptr];
    assign dstarf2 = dst[comptr2];
    assign combranch = combranch1 | (~prmiss & commit2 & isbranch[comptr2]);
@@ -103,8 +103,10 @@ module reorderbuf
 
    // next_comptr-1是最后一条commit的指令，如果是分支且跳转，那返回地址应
    // 该是跳转地址，否则就返回下一条commit指令的pc
-   assign irq_jmpaddr = (isbranch[next_comptr-1] && brcond[next_comptr-1]) ? 
-       jmpaddr[next_comptr-1] : inst_pc[next_comptr];
+   // 原设想是，在确认irq的cycle，原本在该cycle可以commit的指令，可以执行
+   // commit，但这样似乎有问题，最后暂时还是在确认irq的cycle，取消所有在流水线的指令
+   assign irq_jmpaddr = (isbranch[comptr-1] && brcond[comptr-1]) ? 
+       jmpaddr[comptr-1] : (inst_pc[comptr-1]+4);
 
    always @ (posedge clk) begin
       if (reset || irq_flush) begin
