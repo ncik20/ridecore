@@ -14,8 +14,9 @@ module exunit_csr
    input wire 			            issue,
    input wire 			            prmiss,
    input wire 			            csrcommit,
+   input wire 			            retcommit,
    input wire [`SPECTAG_LEN-1:0]    spectagfix,
-   input wire [`ADDR_LEN-1:0] 	    irq_jmpaddr,
+   input wire [`ADDR_LEN-1:0] 	    mepc,
    output wire [`DATA_LEN-1:0] 	    result,
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
@@ -27,7 +28,7 @@ module exunit_csr
    reg 			       busy;
    reg [`DATA_LEN-1:0] mstatus;
    reg [`DATA_LEN-1:0] mtvec;
-   reg [`DATA_LEN-1:0] mepc;
+   //reg [`DATA_LEN-1:0] mepc;
 
    assign rob_we = busy;
    assign rrf_we = busy & dstval;
@@ -74,10 +75,18 @@ module exunit_csr
       endcase
       end
 
+      // 中断确认后屏蔽所有外部irq
+      // 未考虑是否同时有csr指令在执行
       if (irq_flush) begin
-        mepc <= irq_jmpaddr;
+        //mepc <= irq_jmpaddr;
         mstatus[3] = 1'b0;
       end
+
+      // mret返回后，clear外部irq屏蔽
+      // 必须是mret确认commit后才执行
+      // 否则在mret确认commit前放开，有可能取消mret的执行
+      // 然后mepc又被设置，导致前一次的mepc丢失，无法返回
+      if (retcommit) mstatus[3] = 1'b1;
    end
    
 endmodule // exunit_csr

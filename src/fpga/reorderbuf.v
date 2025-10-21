@@ -44,6 +44,7 @@ module reorderbuf
    output wire [1:0] 		  comnum,
    output wire 			  stcommit,
    output wire 			  csrcommit,
+   output wire            retcommit,
    output wire 			  arfwe1,
    output wire 			  arfwe2,
    output wire [`REG_SEL-1:0] 	  dstarf1,
@@ -53,7 +54,7 @@ module reorderbuf
    output wire 			  brcond_combranch,
    output wire [`ADDR_LEN-1:0] 	  jmpaddr_combranch,
    output wire 			  combranch,
-   output wire [`ADDR_LEN-1:0] 	  irq_jmpaddr,
+   output reg [`ADDR_LEN-1:0] 	  mepc,
    input wire [`RRF_SEL-1:0] 	  dispatchptr,
    input wire [`RRF_SEL:0] 	  rrf_freenum,
    input wire 			  prmiss
@@ -61,15 +62,15 @@ module reorderbuf
 
    reg [`RRF_NUM-1:0] 		  finish;
    reg [`RRF_NUM-1:0] 		  storebit;
-   reg [`RRF_NUM-1:0] 		  csrbit;
    reg [`RRF_NUM-1:0] 		  dstvalid;
    reg [`RRF_NUM-1:0] 		  brcond;
    reg [`RRF_NUM-1:0] 		  isbranch;
    
-   reg [`ADDR_LEN-1:0] 		  inst_pc [0:`RRF_NUM-1];
-   reg [`ADDR_LEN-1:0] 		  jmpaddr [0:`RRF_NUM-1];   
-   reg [`REG_SEL-1:0] 		  dst [0:`RRF_NUM-1];
-   reg [`GSH_BHR_LEN-1:0] 	  bhr [0:`RRF_NUM-1];
+   reg [`ADDR_LEN-1:0] 		  inst_pc   [0:`RRF_NUM-1];
+   reg [`ADDR_LEN-1:0] 		  jmpaddr   [0:`RRF_NUM-1];   
+   reg [`REG_SEL-1:0] 		  dst       [0:`RRF_NUM-1];
+   reg [`GSH_BHR_LEN-1:0] 	  bhr       [0:`RRF_NUM-1];
+   reg [1:0]         		  csrbit    [0:`RRF_NUM-1];
 
    wire 			          commit2;
    wire [`RRF_SEL-1:0]        next_comptr;
@@ -89,13 +90,14 @@ module reorderbuf
    assign next_comptr = comptr + commit1 + commit2;
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
    assign stcommit = (stcommit1 | (~prmiss & commit2 & storebit[comptr2])) & ~irq_flush;
-   assign csrcommit = ((~prmiss & commit1 & csrbit[comptr]) |
-		     (~prmiss & commit2 & csrbit[comptr2])) & ~irq_flush;
+   assign csrcommit = ((~prmiss & commit1 & (csrbit[comptr] == 2'b11)) |
+		     (~prmiss & commit2 & (csrbit[comptr2] == 2'b11))) & ~irq_flush;
    assign arfwe1 = ~prmiss & commit1 & dstvalid[comptr] & ~irq_flush;
    assign arfwe2 = ~prmiss & commit2 & dstvalid[comptr2] & ~irq_flush;
    assign dstarf1 = dst[comptr];
    assign dstarf2 = dst[comptr2];
    assign combranch = combranch1 | (~prmiss & commit2 & isbranch[comptr2]);
+   assign retcommit = combranch & ((csrbit[comptr] == 2'b10) || (csrbit[comptr2] == 2'b10));
    assign pc_combranch = combranch1 ? inst_pc[comptr] : inst_pc[comptr2];
    assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
    assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];
@@ -167,6 +169,10 @@ module reorderbuf
 	 dst[dp2_addr] <= dst_dp2;
 	 bhr[dp2_addr] <= bhr_dp2;
 	 inst_pc[dp2_addr] <= pc_dp2;
+      end
+
+      if (irq_flush) begin
+        mepc <= irq_jmpaddr;
       end
    end
 endmodule // reorderbuf

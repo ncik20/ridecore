@@ -142,10 +142,11 @@ module decoder(
         end
         `RV32_SYSTEM : begin
 //           wb_src_sel_DX = `WB_SRC_CSR;
-           wr_reg = 1'b1;
+           wr_reg = (funct3 != `RV32_FUNCT3_PRIV);
            case (funct3)
-/*
+
              `RV32_FUNCT3_PRIV : begin
+/*
                 if ((rs1 == 0) && (reg_to_wr_DX == 0)) begin
                    case (funct12)
                      `RV32_FUNCT12_ECALL : ecall = 1'b1;
@@ -159,8 +160,15 @@ module decoder(
                      default : illegal_instruction = 1'b1;
                    endcase // case (funct12)
                 end // if ((rs1 == 0) && (reg_to_wr_DX == 0))
-             end // case: `RV32_FUNCT3_PRIV
 */
+                case (funct12)
+                    `RV32_FUNCT12_MRET : begin
+                        uses_rs1 = 1'b0;
+                    end
+                    default : illegal_instruction = 1'b1;
+                endcase // case (funct12)
+             end // case: `RV32_FUNCT3_PRIV
+
              `RV32_FUNCT3_CSRRW : csr_op = (rd == 0) ? `CSR_WRITE_NOREAD : `CSR_WRITE;
              `RV32_FUNCT3_CSRRS : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_SET;
              `RV32_FUNCT3_CSRRC : csr_op = (rs1 == 0) ? `CSR_READ : `CSR_CLEAR;
@@ -178,7 +186,7 @@ module decoder(
              end
              default : illegal_instruction = 1'b1;
            endcase // case (funct3)
-           rs_ent = `RS_ENT_CSR;
+           rs_ent = (funct3 == `RV32_FUNCT3_PRIV) ? `RS_ENT_BRANCH : `RS_ENT_CSR;
         end
         `RV32_AUIPC : begin
            uses_rs1 = 1'b0;

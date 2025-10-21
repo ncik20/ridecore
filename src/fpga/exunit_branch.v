@@ -18,6 +18,7 @@ module exunit_branch
    input wire [`ADDR_LEN-1:0] 	  praddr,
    input wire [6:0] 		  opcode,
    input wire 			  issue,
+   input wire [`ADDR_LEN-1:0] 	  mepc, 
    output wire [`DATA_LEN-1:0] 	  result,
    output wire 			  rrf_we,
    output wire 			  rob_we, //set finish
@@ -41,10 +42,11 @@ module exunit_branch
    assign prsuccess = busy & addrmatch & ~irq_flush;
    assign prmiss = busy & ~addrmatch & ~irq_flush; //为了不影响commit指令更新arf的busy位，添加irq_flush条件
    assign jmpaddr = brcond ? jmpaddr_taken : (pc + 4);
-   assign jmpaddr_taken = (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
+   assign jmpaddr_taken = (opcode == `RV32_SYSTEM) ? mepc :
+       (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
    
-   assign brcond = ((opcode == `RV32_JAL) || (opcode == `RV32_JALR)) ?
-			       1'b1 : comprslt[0];
+   assign brcond = ((opcode == `RV32_JAL) || (opcode == `RV32_JALR) || 
+                    (opcode == `RV32_SYSTEM)) ? 1'b1 : comprslt[0];
    assign tagregfix = {spectag[0], spectag[`SPECTAG_LEN-1:1]};
    
    always @ (posedge clk) begin

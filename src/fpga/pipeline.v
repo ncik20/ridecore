@@ -513,6 +513,7 @@ module pipeline
    wire [1:0] 		   comnum;
    wire 		   stcommit;
    wire 		   csrcommit;
+   wire            retcommit;
    wire 		   arfwe1;
    wire 		   arfwe2;
    wire [`REG_SEL-1:0] 	   dstarf1;
@@ -545,8 +546,8 @@ module pipeline
     reg  req_enable;
 
     wire irq_flush;
-    wire [`ADDR_LEN-1:0]    irq_jmpaddr;
-
+    wire [`ADDR_LEN-1:0]    mepc;
+    
     wire mie;
 
    //IF Stage********************************************************
@@ -2170,8 +2171,9 @@ module pipeline
 		     .issue(issue_csr),
 		     .prmiss(prmiss),
 		     .csrcommit(csrcommit),
+             .retcommit(retcommit),
 		     .spectagfix(spectagfix),
-             .irq_jmpaddr(irq_jmpaddr),
+             .mepc(mepc),
 		     .result(result_csr),
 		     .rrf_we(rrfwe_csr),
 		     .rob_we(robwe_csr),
@@ -2223,6 +2225,7 @@ module pipeline
 		       .praddr(buf_praddr_branch),
 		       .opcode(buf_opcode_branch),
 		       .issue(issue_branch),
+               .mepc(mepc),
 		       .result(result_branch),
 		       .rrf_we(rrfwe_branch),
 		       .rob_we(robwe_branch),
@@ -2259,7 +2262,7 @@ module pipeline
 		  .dp1_addr(dst1_renamed),
 		  .pc_dp1(pc_id),
 		  .storebit_dp1(inst1_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp1(inst1_id[6:0] == `RV32_SYSTEM ? 1'b1 : 1'b0),
+		  .csrbit_dp1({1{inst1_id[6:0] == `RV32_SYSTEM}, 1{|(inst1_id[14:12])}}),
 		  .dstvalid_dp1(wr_reg_1_id),
 		  .dst_dp1(rd_1_id),
 		  .bhr_dp1(bhr_id),
@@ -2268,7 +2271,7 @@ module pipeline
 		  .dp2_addr(dst2_renamed),
 		  .pc_dp2(pc_id + 4),
 		  .storebit_dp2(inst2_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp2(inst2_id[6:0] == `RV32_SYSTEM ? 1'b1 : 1'b0),
+		  .csrbit_dp2({1{inst2_id[6:0] == `RV32_SYSTEM}, 1{|(inst2_id[14:12])}}),
 		  .dstvalid_dp2(wr_reg_2_id),
 		  .dst_dp2(rd_2_id),
 		  .bhr_dp2(bhr_id),
@@ -2293,6 +2296,7 @@ module pipeline
 		  .comnum(comnum),
 		  .stcommit(stcommit),
           .csrcommit(csrcommit),
+          .retcommit(retcommit),
 		  .arfwe1(arfwe1),
 		  .arfwe2(arfwe2),
 		  .dstarf1(dstarf1),
@@ -2302,7 +2306,7 @@ module pipeline
 		  .brcond_combranch(brcond_combranch),
 		  .jmpaddr_combranch(jmpaddr_combranch),
 		  .combranch(combranch),
-          .irq_jmpaddr(irq_jmpaddr),
+          .mepc(mepc),
 		  .dispatchptr(rrfptr),
 		  .rrf_freenum(freenum),
 		  .prmiss(prmiss)
