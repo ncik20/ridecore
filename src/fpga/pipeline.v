@@ -549,6 +549,12 @@ module pipeline
     wire [`ADDR_LEN-1:0]    mepc;
     
     wire mie;
+	 
+	wire system_ins1;
+	wire system_ins_priv1;
+	 
+	wire system_ins2;
+	wire system_ins_priv2;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -558,6 +564,10 @@ module pipeline
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
    assign irq_flush = irq & mie & idata_ok;
+   assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+   assign system_ins_priv1 = |(inst1_id[14:12]);
+   assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+   assign system_ins_priv2 = |(inst2_id[14:12]);
 
 /*
    always @ (posedge clk) begin
@@ -2262,7 +2272,7 @@ module pipeline
 		  .dp1_addr(dst1_renamed),
 		  .pc_dp1(pc_id),
 		  .storebit_dp1(inst1_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp1({1{inst1_id[6:0] == `RV32_SYSTEM}, 1{|(inst1_id[14:12])}}),
+		  .csrbit_dp1({system_ins1, system_ins_priv1}),
 		  .dstvalid_dp1(wr_reg_1_id),
 		  .dst_dp1(rd_1_id),
 		  .bhr_dp1(bhr_id),
@@ -2271,7 +2281,7 @@ module pipeline
 		  .dp2_addr(dst2_renamed),
 		  .pc_dp2(pc_id + 4),
 		  .storebit_dp2(inst2_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp2({1{inst2_id[6:0] == `RV32_SYSTEM}, 1{|(inst2_id[14:12])}}),
+		  .csrbit_dp2({system_ins2, system_ins_priv2}),
 		  .dstvalid_dp2(wr_reg_2_id),
 		  .dst_dp2(rd_2_id),
 		  .bhr_dp2(bhr_id),

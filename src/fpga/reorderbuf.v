@@ -10,7 +10,7 @@ module reorderbuf
    input wire [`RRF_SEL-1:0] 	  dp1_addr,
    input wire [`INSN_LEN-1:0] 	  pc_dp1,
    input wire 			  storebit_dp1,
-   input wire 			  csrbit_dp1,
+   input wire [1:0]  	  csrbit_dp1,
    input wire 			  dstvalid_dp1,
    input wire [`REG_SEL-1:0] 	  dst_dp1,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp1,
@@ -19,7 +19,7 @@ module reorderbuf
    input wire [`RRF_SEL-1:0] 	  dp2_addr,
    input wire [`INSN_LEN-1:0] 	  pc_dp2,
    input wire 			  storebit_dp2,
-   input wire 			  csrbit_dp2,
+   input wire [1:0]		  csrbit_dp2,
    input wire 			  dstvalid_dp2,
    input wire [`REG_SEL-1:0] 	  dst_dp2,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp2,
@@ -74,6 +74,7 @@ module reorderbuf
 
    wire 			          commit2;
    wire [`RRF_SEL-1:0]        next_comptr;
+   wire [`ADDR_LEN-1:0] 	  irq_jmpaddr;
 
    assign comptr2 = comptr+1;
    
