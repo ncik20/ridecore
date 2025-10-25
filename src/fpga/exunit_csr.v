@@ -43,6 +43,7 @@ module exunit_csr
    always @ (posedge clk) begin
       if (reset) begin
 	 busy <= 0;
+     mstatus <= 0;
       end else begin
 	 busy <= issue;
       end
