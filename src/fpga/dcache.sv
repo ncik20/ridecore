@@ -172,6 +172,38 @@ module dm_cache_fsm(input logic clk, input logic rst,
     assign io_write_byteenable = (cpu_req_funct3 == 3'b000) ? 16'h0001 :
         (cpu_req_funct3 == 3'b001) ? 16'h0003 : 16'h000F;
 
+    function automatic [31:0] store_byte;
+        input [1:0]     addr;
+        input [31:0]    org_word;
+        input [7:0]     update_data;
+
+	    case(addr)
+			2'b00:return {org_word[31-:24], update_data};
+
+			2'b01:return {org_word[31-:16], update_data, org_word[7:0]};
+
+			2'b10:return {org_word[31-:8], update_data, org_word[15:0]};
+
+			2'b11:return {update_data, org_word[23:0]};
+		endcase
+    endfunction : store_byte
+
+    function automatic [31:0] store_h;
+        input [1:0]     addr;
+        input [31:0]    org_word;
+        input [15:0]    update_data;
+
+	    case(addr)
+			2'b00:return {org_word[31-:16], update_data};
+
+			2'b01:return 32'h0; // TODO:go trap
+
+			2'b10:return {update_data, org_word[15:0]};
+
+			2'b11:return 32'h0; // TODO:go trap
+		endcase
+    endfunction : store_h
+
 	always_comb begin
 		/*--------------------default values for all signals--------------------*/
 		/*no state change by default*/
@@ -192,20 +224,24 @@ module dm_cache_fsm(input logic clk, input logic rst,
 		data_write = data_read;
 		case(req_addr[3:2])
 			2'b00:data_write[31-: 32] = (cpu_req_funct3 == 3'b000) ?
-                {data_write[31-:24], cpu_req_data[7:0]} : (cpu_req_funct3 == 3'b001) ?
-                {data_write[31-:16], cpu_req_data[15:0]} : cpu_req_data;
+              store_byte(req_addr[1:0], data_write[31-: 32], cpu_req_data[7:0]) :
+              (cpu_req_funct3 == 3'b001) ?
+              store_h(req_addr[1:0], data_write[31-: 32], cpu_req_data[15:0]) : cpu_req_data;
 
 			2'b01:data_write[63-: 32] = (cpu_req_funct3 == 3'b000) ?
-                {data_write[63-:24], cpu_req_data[7:0]} : (cpu_req_funct3 == 3'b001) ?
-                {data_write[63-:16], cpu_req_data[15:0]} : cpu_req_data;
+              store_byte(req_addr[1:0], data_write[63-: 32], cpu_req_data[7:0]) :
+              (cpu_req_funct3 == 3'b001) ?
+              store_h(req_addr[1:0], data_write[63-: 32], cpu_req_data[15:0]) : cpu_req_data;
 
 			2'b10:data_write[95-: 32] = (cpu_req_funct3 == 3'b000) ?
-                {data_write[95-:24], cpu_req_data[7:0]} : (cpu_req_funct3 == 3'b001) ?
-                {data_write[95-:16], cpu_req_data[15:0]} : cpu_req_data;
+              store_byte(req_addr[1:0], data_write[95-: 32], cpu_req_data[7:0]) :
+              (cpu_req_funct3 == 3'b001) ?
+              store_h(req_addr[1:0], data_write[95-: 32], cpu_req_data[15:0]) : cpu_req_data;
 
 			2'b11:data_write[127-:32] = (cpu_req_funct3 == 3'b000) ?
-                {data_write[127-:24], cpu_req_data[7:0]} : (cpu_req_funct3 == 3'b001) ?
-                {data_write[127-:16], cpu_req_data[15:0]} : cpu_req_data;
+              store_byte(req_addr[1:0], data_write[127-: 32], cpu_req_data[7:0]) :
+              (cpu_req_funct3 == 3'b001) ?
+              store_h(req_addr[1:0], data_write[127-: 32], cpu_req_data[15:0]) : cpu_req_data;
 		endcase
 
         v_cpu_res.data = data_read;

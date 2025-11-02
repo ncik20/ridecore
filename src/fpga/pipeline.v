@@ -550,11 +550,11 @@ module pipeline
     
     wire mie;
 	 
-	wire system_ins1;
-	wire system_ins_priv1;
+	 wire system_ins1;
+	 wire system_ins_priv1;
 	 
-	wire system_ins2;
-	wire system_ins_priv2;
+	 wire system_ins2;
+	 wire system_ins_priv2;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -564,10 +564,10 @@ module pipeline
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
    assign irq_flush = irq & mie & idata_ok;
-   assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-   assign system_ins_priv1 = |(inst1_id[14:12]);
-   assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-   assign system_ins_priv2 = |(inst2_id[14:12]);
+	assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+	assign system_ins_priv1 = |(inst1_id[14:12]);
+	assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+	assign system_ins_priv2 = |(inst2_id[14:12]);
 
 /*
    always @ (posedge clk) begin
@@ -1535,7 +1535,7 @@ module pipeline
    assign allocent2_branch = allocent1_branch + 1;
    assign issue_branch = ~prmiss & ~irq_flush & issuevalid_branch;
    
-   alloc_issue_ino ai_branch(
+   alloc_issue_ino #(`BRANCH_ENT_SEL, `BRANCH_ENT_NUM) ai_branch(
 			     .clk(clk),
 			     .reset(reset),
                  .irq_flush(irq_flush),
@@ -2040,6 +2040,7 @@ module pipeline
      (
       .clk(clk),
       .reset(reset),
+      .irq_flush(irq_flush),
       .prsuccess(prsuccess),
       .prmiss(prmiss),
       .prtag(buf_spectag_branch),

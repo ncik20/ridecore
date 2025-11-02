@@ -137,6 +137,7 @@ module storebuf
 	 valid <= 0;
 	 completed <= 0;
       end else if (irq_flush) begin
+/*          
 	    if (stcom) begin
 	        valid <= valid & completed_new;
 	        completed[comptr] <= 1'b1;
@@ -147,6 +148,9 @@ module storebuf
 	        valid <= valid & completed;
             finptr <= comptr;
         end
+*/
+	        valid <= valid & completed;
+            finptr <= comptr;
       end else if (prmiss) begin
 	 if (stfin) begin
 	    //KillNotOccur!!!
