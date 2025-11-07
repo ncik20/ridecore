@@ -93,7 +93,9 @@ module select_logic
    output wire 			invalid
    );
 
-   assign invalid = (sel[0] == 1'b1);
+   //assign invalid = (sel[0] == 1'b1);
+   assign invalid = (sel == 2'b11);
+
    
    always @ (*) begin
       inst1 = `INSN_LEN'h0;

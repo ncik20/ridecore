@@ -550,11 +550,13 @@ module pipeline
     
     wire mie;
 	 
-	 wire system_ins1;
-	 wire system_ins_priv1;
+	wire system_ins1;
+	wire system_ins_priv1;
 	 
-	 wire system_ins2;
-	 wire system_ins_priv2;
+	wire system_ins2;
+	wire system_ins_priv2;
+
+    wire [1:0]  hit_staddr_off;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -564,10 +566,10 @@ module pipeline
    assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
    assign irq_flush = irq & mie & idata_ok;
-	assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-	assign system_ins_priv1 = |(inst1_id[14:12]);
-	assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-	assign system_ins_priv2 = |(inst2_id[14:12]);
+   assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+   assign system_ins_priv1 = |(inst1_id[14:12]);
+   assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
+   assign system_ins_priv2 = |(inst2_id[14:12]);
 
 /*
    always @ (posedge clk) begin
@@ -645,7 +647,23 @@ module pipeline
 	    inv1_if <= 0;
 	    inv2_if <= invalid2_pipe;
 	    bhr_if <= bhr;
-      end else if (~stall_ID) begin
+      end else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
+                                                        // 在if_register设置好的cycle T，
+                                                        // 会进行decode，下一个cycle T+1，
+                                                        // 会进行下一组指令的decode
+                                                        // 如果在T+1，没有准备好if_register的内容，
+                                                        // 又没有设置指令为invalid，就会重复执行decode，
+                                                        // 并且重复执行之后的流程，就是重复执行指令
+                                                        // 这里，就是设置T+1的if_register为invalid
+                                                        //
+                                                        // 2）为什么要在非stall_ID非stall_DP之后才执行
+                                                        // 假如在T时，stall_ID或者stall_DP了，无法执行decode，
+                                                        // 在T+1可以执行了，此时T+1的if_register却设置为invalid了
+                                                        // 所以在非stall_ID非stall_DP之后的cycle再设置为invalid，
+                                                        // 留给decode一个cycle执行
+                                                        //
+                                                        // 3）为什么stall_DP也要考虑
+                                                        // 因为只有~stall_DP时，id_register才会写入 
         inv1_if <= 1;
         inv2_if <= 1;
       end
@@ -2062,6 +2080,7 @@ module pipeline
       .cache_busy(dcache_busy),
       .ldaddr(ldaddr),
       .lddata(lddatasb),
+      .hit_staddr_off(hit_staddr_off),
       .ldfunct3(ldfunct3),
       .hit(hitsb)
       );
@@ -2097,6 +2116,7 @@ module pipeline
 		      .storedata(storedata),
 		      .storeaddr(storeaddr),
 		      .hitsb(hitsb),
+              .hit_staddr_off(hit_staddr_off),
               .ldfunct3(ldfunct3),
 		      .ldaddr(ldaddr),
 		      .lddatasb(lddatasb),

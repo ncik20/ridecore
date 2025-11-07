@@ -27,6 +27,7 @@ module storebuf
    input wire cache_busy,
    input wire [`ADDR_LEN-1:0] 	 ldaddr,
    output wire [`DATA_LEN-1:0] 	 lddata,
+   output wire [1:0]             hit_staddr_off,    // st时staddr的后2位
    output wire [`MEM_TYPE_WIDTH-1:0]    ldfunct3,
    output wire 			 hit
    );
@@ -93,6 +94,7 @@ module storebuf
    assign retfunct3 = funct3[retptr];
    assign lddata = data[ldent];
    assign ldfunct3 = funct3[ldent];
+   assign hit_staddr_off = addr[ldent][1:0];
    assign stretire = valid[retptr] && completed[retptr] && ~(dmem_w_done[1]) && ~prmiss;
    assign sb_full = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
    assign finptr_next = (~notfull_next | ~notempty_next) ? finptr :
