@@ -14,6 +14,7 @@ package cache_def;
 	typedef struct {
 		bit [8:0]index;			//9-bit index
 		bit we;					//write enable
+        bit en;
 	}cache_req_type;
 
 	//128-bit cache line data

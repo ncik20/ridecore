@@ -8,7 +8,9 @@ module pipeline
   (
    input wire 			            clk,
    input wire 			            reset,
+   output wire                      kill_icache_req,
    output reg  [`ADDR_LEN-1:0] 	    pc,
+   input wire  [`ADDR_LEN-1:0] 	    cpu_res_pc,
    input wire  [4*`INSN_LEN-1:0]    idata,
 
    output wire [1:0]			    dmem_we,
@@ -36,23 +38,27 @@ module pipeline
 
    //IF
    // Signal from pipe_if
-   wire     	       prcond;
-   wire [`ADDR_LEN-1:0] npc;
-   wire [`INSN_LEN-1:0] inst1;
-   wire [`INSN_LEN-1:0] inst2;
-   wire 		invalid2_pipe;
-   wire [`GSH_BHR_LEN-1:0] bhr;
+   wire     	            prcond;
+   wire [`ADDR_LEN-1:0]     npc;
+   wire [`INSN_LEN-1:0]     inst1;
+   wire [`INSN_LEN-1:0]     inst2;
+   wire 		            invalid2_pipe;
+   wire [`GSH_BHR_LEN-1:0]  bhr;
    
    //Instruction Buffer
-   reg 			   prcond_if;
-   reg [`ADDR_LEN-1:0] 	   npc_if;
-   reg [`ADDR_LEN-1:0] 	   pc_if;
-   reg [`INSN_LEN-1:0] 	   inst1_if;
-   reg [`INSN_LEN-1:0] 	   inst2_if;
-   reg 			   inv1_if;
-   reg 			   inv2_if;
-   reg 			   bhr_if;
-   wire 		   attachable;
+   reg 			            prcond_if;
+   reg 			            prcond_latch;
+   reg [`ADDR_LEN-1:0] 	    npc_if;
+   reg [`ADDR_LEN-1:0] 	    npc_latch;
+   reg [`ADDR_LEN-1:0] 	    pc_if;
+   reg [`INSN_LEN-1:0] 	    inst1_if;
+   reg [`INSN_LEN-1:0] 	    inst2_if;
+   reg 			            inv1_if;
+   reg 			            inv2_if;
+   //reg [`GSH_BHR_LEN-1:0]   bhr_if;
+   reg                      bhr_if;
+   reg [`GSH_BHR_LEN-1:0]   bhr_latch;
+   wire 		            attachable;
 
    //ID
    //Decode Info1
@@ -421,6 +427,7 @@ module pipeline
    wire 		       rrfwe_ldst;
    wire 		       robwe_ldst;
    wire [`RRF_SEL-1:0] 	       wrrftag_ldst;
+   wire                kill_ld_req;
    wire 		       kill_speculative_ldst;
    wire 		       busy_next_ldst;
 
@@ -428,7 +435,6 @@ module pipeline
    wire 		       hitsb;
    wire 		       memoccupy_ld;
    wire [`ADDR_LEN-1:0]        ldaddr;
-   wire [`ADDR_LEN-1:0]        staddr;
    wire [`DATA_LEN-1:0]        lddatasb;
    wire [`MEM_TYPE_WIDTH-1:0]  ldfunct3;
    wire [`ADDR_LEN-1:0]        retaddr;
@@ -483,7 +489,7 @@ module pipeline
    wire 		       prsuccess;
    wire [`ADDR_LEN-1:0]        jmpaddr;
    wire [`ADDR_LEN-1:0]        jmpaddr_taken;
-   reg  [`ADDR_LEN-1:0]        jmpaddr_latch;
+   // reg  [`ADDR_LEN-1:0]        jmpaddr_latch;
    wire 		       brcond;
    wire [`SPECTAG_LEN-1:0]     tagregfix;
    
@@ -524,14 +530,9 @@ module pipeline
    wire 		   combranch;
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
 	
-	//reg  pc_change_busy;
-	//reg  icache_busy_real;
-	//wire read_cache;
-
-    
     wire dcache_busy;
-    reg  dcache_r_req;
-    reg  dcache_w_req;
+    wire dcache_r_req;
+    wire dcache_w_req;
 
     wire avm_m0_write;
     wire avm_m0_read;
@@ -540,75 +541,127 @@ module pipeline
     wire [`DATA_LEN-1:0] retdata;
     wire [`MEM_TYPE_WIDTH-1:0] retfunct3;
     
-    wire idata_ok;
-    wire ddata_ok;
-    reg  jmpaddr_is_latch;
-    reg  req_enable;
+    wire icache_req_ok;
+    wire dcache_req_ok;
+    // wire ddata_ok;
+    // reg  jmpaddr_is_latch;
+    reg  dcache_r_req_en;
 
     wire irq_flush;
     wire [`ADDR_LEN-1:0]    mepc;
-    
-    wire mie;
-	 
-	wire system_ins1;
-	wire system_ins_priv1;
-	 
-	wire system_ins2;
-	wire system_ins_priv2;
 
-    wire [1:0]  hit_staddr_off;
+    wire            mie;
+	 
+	wire            system_ins1;
+	wire            system_ins_priv1;
+	 
+	wire            system_ins2;
+	wire            system_ins_priv2;
+
+    wire [1:0]      hit_staddr_off;
+
+    wire            iBuf_almost_empty;
+    wire            iBuf_almost_full;
+    wire            iBuf_empty;
+    wire            iBuf_full;
+    wire [143:0]    iBuf_w_data;
+    wire [143:0]    iBuf_r_data;
+
+    wire            read_iBuf;
+    // reg             iBuf_not_empty;
+    // reg             cur_state;
+    // reg             next_state;
+    // reg             need_;
+
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
-   assign idata_ok = icache_done & icache_busy;
-   assign ddata_ok = cpu_res_ready && dcache_busy;
-   assign stall_IF = stall_ID | stall_DP | ~idata_ok;
-   assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
-   assign irq_flush = irq & mie & idata_ok;
+
+   // idata_ok与新req要区分开？
+   // assign idata_ok = icache_done & icache_busy;
+   
+   assign icache_req_ok = icache_done | ~icache_busy;
+   assign dcache_req_ok = (|cpu_res_ready) | ~dcache_busy;
+
+   // assign ddata_ok = cpu_res_ready && dcache_busy;
+
+   // assign stall_IF = stall_ID | stall_DP | ~idata_ok;
+   assign stall_IF = stall_ID | stall_DP;
+
+   // assign irq_flush = irq & mie & idata_ok;
+   assign irq_flush = irq & mie & icache_req_ok;
+
+   // assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
+   assign kill_IF = prmiss | irq_flush;
+   assign kill_icache_req = kill_IF;
+
    assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
    assign system_ins_priv1 = |(inst1_id[14:12]);
    assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
    assign system_ins_priv2 = |(inst2_id[14:12]);
 
-/*
    always @ (posedge clk) begin
-
-      if (reset) irq_flush <= 1'b0;
-      else if (irq && ~irq_flush) irq_flush <= 1'b1;
-   end
-*/
-
-   always @ (posedge clk) begin
-	
-      // jmpaddr_is_latch <= jmpaddr_is_latch;
-      // jmpaddr_latch <= jmpaddr_latch;
 
       if (reset) begin
+
 		 pc <= `ENTRY_POINT;
-	     jmpaddr_is_latch <= 1'b0;
+
+	     // jmpaddr_is_latch <= 0;
+
+         // jmp_addr <= 0;
+
+         // latch npc信息
+         npc_latch <= 0;
+         bhr_latch <= 0;
+         prcond_latch <= 0;
       end else if (irq_flush) begin
-         //irq_flush <= 1'b0;
+
          pc <= `IRQ_POINT;
-      end else if (jmpaddr_is_latch && idata_ok) begin
+
+         // jmp_addr <= `IRQ_POINT;
+/*
+      //end else if (jmpaddr_is_latch && idata_ok) begin
+      end else if (jmpaddr_is_latch && icache_req_ok) begin
+
 		 pc <= jmpaddr_latch;
-         jmpaddr_is_latch <= 1'b0; 
-      end else if (prmiss && idata_ok) begin
+         jmpaddr_is_latch <= 0;
+
+         jmp_addr <= jmpaddr_latch;
+*/
+      //end else if (prmiss && idata_ok) begin
+      //end else if (prmiss && icache_req_ok) begin
+      end else if (prmiss) begin
+
 		 pc <= jmpaddr;
-      end else if (prmiss && ~jmpaddr_is_latch) begin
-         jmpaddr_latch <= jmpaddr;
-         jmpaddr_is_latch <= 1'b1;
-      end else if (stall_IF) begin
-		 pc <= pc;
-      end else begin
+
+         // jmp_addr <= jmpaddr;
+
+      end else if (~icache_req_ok) begin
+         pc <= pc;
+/*
+         if (prmiss && ~jmpaddr_is_latch) begin
+            jmpaddr_latch <= jmpaddr;
+            jmpaddr_is_latch <= 1'b1;
+         end
+*/
+      end 
+      else begin
          pc <= npc;
+
+         // latch npc信息
+         npc_latch <= npc;
+         bhr_latch <= bhr;
+         prcond_latch <= prcond;
       end
+
    end
 	
    pipeline_if pipe_if(
 		       .clk(clk),
 		       .reset(reset),
-		       .pc(pc),
+               .pc(pc),
+		       .cpu_res_pc(cpu_res_pc),
 		       .predict_cond(prcond),
 		       .npc(npc),
 		       .inst1(inst1),
@@ -628,6 +681,50 @@ module pipeline
 		       .idata(idata)
 		       );
 
+   assign iBuf_w_data = {inst2, inst1, npc_latch, cpu_res_pc, bhr_latch, prcond_latch, invalid2_pipe, 4'h0};
+
+   assign read_iBuf = ~stall_IF && ~iBuf_almost_empty;
+
+   fifo iBuffer(
+            .clock(clk),
+	        .data(iBuf_w_data),
+	        .rdreq(read_iBuf),
+            //.sclr(reset || (jmpaddr_is_latch && icache_req_ok) || (prmiss && icache_req_ok)),
+            .sclr(reset || kill_IF),
+	        .wrreq(icache_done),    // 暂时不考虑full不能写入的情况
+	        .almost_empty(iBuf_almost_empty),
+	        //.almost_full(iBuf_almost_full),
+	        .empty(iBuf_empty),
+	        .full(iBuf_full),
+	        .q(iBuf_r_data)
+            );
+/*
+   always @ (posedge clk) begin
+
+      if (iBuf_almost_empty)
+        iBuf_not_empty <= 0;
+      else
+        iBuf_not_empty <= 1'b1;
+
+      if (reset) cur_state <= 0;
+      else cur_state <= next_state;
+   end
+
+   always @(*) begin
+      need_ = 0;
+      next_state = cur_state;
+      case (cur_state)
+        0:if ((jmpaddr_is_latch && icache_req_ok) || (prmiss && icache_req_ok)) next_state = 1;
+        1:begin
+            need_ = 1;
+            if (jmp_addr == iBuf_r_data[47-:32]) begin
+                need_ = 0;
+                next_state = 0;
+            end
+        end
+       endcase
+   end
+*/
    always @ (posedge clk) begin
       if (reset || kill_IF) begin
 	    prcond_if <= 0;
@@ -638,32 +735,72 @@ module pipeline
 	    inv1_if <= 1;
 	    inv2_if <= 1;
 	    bhr_if <= 0;
-      end else if (~stall_IF) begin
+
+      //end else if (~stall_IF && icache_done) begin
+      end else if (read_iBuf) begin
+
+        prcond_if <= iBuf_r_data[5];
+        npc_if <= iBuf_r_data[79-:32];
+        pc_if <= iBuf_r_data[47-:32];
+        inst1_if <= iBuf_r_data[111-:32];
+        inst2_if <= iBuf_r_data[143-:32];
+        inv1_if <= 0;
+        inv2_if <= iBuf_r_data[4];
+        bhr_if <= iBuf_r_data[15-:10];
+/*
+        if (need_ && jmp_addr != iBuf_r_data[47-:32]) begin
+            inv1_if <= 1;
+            inv2_if <= 1;
+        end
+        else begin
+            prcond_if <= iBuf_r_data[5];
+            npc_if <= iBuf_r_data[79-:32];
+            pc_if <= iBuf_r_data[47-:32];
+            inst1_if <= iBuf_r_data[111-:32];
+            inst2_if <= iBuf_r_data[143-:32];
+            inv1_if <= 0;
+            inv2_if <= iBuf_r_data[4];
+            bhr_if <= iBuf_r_data[15-:10];
+        end
+
 	    prcond_if <= prcond;
 	    npc_if <= npc;
-	    pc_if <= pc;
+	    pc_if <= cpu_res_pc;
 	    inst1_if <= inst1;
 	    inst2_if <= inst2;
 	    inv1_if <= 0;
 	    inv2_if <= invalid2_pipe;
 	    bhr_if <= bhr;
+*/
       end else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
+                                                        // 没有取到数据，需要等待，此时如果
+                                                        // ID，DP没有STALL，那就会
+                                                        // 重新执行之前latch的指令
                                                         // 在if_register设置好的cycle T，
                                                         // 会进行decode，下一个cycle T+1，
                                                         // 会进行下一组指令的decode
-                                                        // 如果在T+1，没有准备好if_register的内容，
-                                                        // 又没有设置指令为invalid，就会重复执行decode，
-                                                        // 并且重复执行之后的流程，就是重复执行指令
-                                                        // 这里，就是设置T+1的if_register为invalid
+                                                        // 如果在T+1，
+                                                        // 没有准备好if_register的内容，
+                                                        // 又没有设置指令为invalid，
+                                                        // 就会重复执行decode，
+                                                        // 并且重复执行之后的流程，
+                                                        // 就是重复执行指令
+                                                        // 这里，就是设置T+1
+                                                        // 的if_register为invalid
                                                         //
-                                                        // 2）为什么要在非stall_ID非stall_DP之后才执行
-                                                        // 假如在T时，stall_ID或者stall_DP了，无法执行decode，
-                                                        // 在T+1可以执行了，此时T+1的if_register却设置为invalid了
-                                                        // 所以在非stall_ID非stall_DP之后的cycle再设置为invalid，
+                                                        // 2）为什么要在非stall_ID非stall_DP
+                                                        // 之后才执行
+                                                        // 假如在T时，stall_ID或者stall_DP，
+                                                        // 无法执行decode，
+                                                        // 在T+1可以执行了，此时T+1
+                                                        // 的if_register却设置为invalid了
+                                                        // 所以在非stall_ID非stall_DP之后
+                                                        // 的cycle再设置为invalid，
                                                         // 留给decode一个cycle执行
                                                         //
                                                         // 3）为什么stall_DP也要考虑
-                                                        // 因为只有~stall_DP时，id_register才会写入 
+                                                        // 因为只有~stall_DP时，
+                                                        // id_register才会写入 
         inv1_if <= 1;
         inv2_if <= 1;
       end
@@ -1974,7 +2111,7 @@ module pipeline
 		   );
 */
 
-   dm_cache_fsm dcache(
+   dm_cache_pl dcache(
         .clk(clk),
         .rst(reset), 
         .cpu_req_addr(dcache_r_req ? ldaddr : retaddr),
@@ -1982,6 +2119,10 @@ module pipeline
         .cpu_req_funct3(retfunct3),
         .cpu_req_rw(dcache_r_req ? 1'b0 : 1'b1),
         .cpu_req_valid(dcache_r_req || dcache_w_req),
+        // dcache_r_req_en == 1 && kill_ld_req == 1的情况
+        // 是还未确认dcache_r_req的情况下，就被kill掉了
+        // 这种情况无需向cache发送kill请求
+        .cpu_req_kill(~dcache_r_req_en && kill_ld_req),
 
         .mem_data_data(dmem_data),
         .mem_data_ready(dmem_done),
@@ -1996,43 +2137,25 @@ module pipeline
         .cpu_res_ready(cpu_res_ready),
         .busy(dcache_busy)
    );
-/*
-   assign dmem_we = {avm_m0_write, avm_m0_read};
 
-   avalon_sdr sdr_dcache(
-      .clk(clk),
-      .reset(reset),      
-      .avm_m0_write(avm_m0_write),
-      .avm_m0_writedata(dmem_wdata),
-      .avm_m0_read(avm_m0_read),
-      .avm_m0_address(dmem_addr),
-      .avm_m0_readdata(dmem_data),
-      .avm_m0_readdatavalid(dmem_done),
-      .avm_m0_waitrequest(1'b0),
-      .mem_req_rw(mem_rw_flag),
-      .maddr(maddr),
-      .read_data(mdata),
-      .write_data(writedata),
-      .mem_done(mem_done)
-            ); 
-*/
+   assign dcache_r_req = dcache_r_req_en & dcache_req_ok & memoccupy_ld;
+   assign dcache_w_req = stretire;
+
+   always @ (posedge clk) begin
+
+        if (reset) dcache_r_req_en <= 1'b0;
+		// 应该在ld_issue后一个周期，也就是ld执行开始后，判断是否申请dcache_req
+        // ld开始执行后，才可判断是否hit sb等操作，需要时间
+        else if (issue_ldst && dstval_ldst) dcache_r_req_en <= 1'b1;
+        // 在可以申请dcache_req之后的cycle，应该clear
+        else if (dcache_r_req_en && (dcache_req_ok || ~memoccupy_ld)) dcache_r_req_en <= 1'b0;
+   end
 
 /*
    always @ (posedge clk) begin
 
-        dcache_r_req = 1'b0;
-        dcache_w_req = 1'b0;
-
-        if (~dcache_busy || ddata_ok) begin
-            if (memoccupy_ld) dcache_r_req = 1'b1;
-            else if (stretire) dcache_w_req = 1'b1;
-        end
-   end*/
-
-   always @ (posedge clk) begin
-
-        dcache_r_req <= 1'b0;
-        dcache_w_req <= 1'b0;
+        // dcache_r_req <= 1'b0;
+        // dcache_w_req <= 1'b0;
 
         if (reset) req_enable <= 1'b0;
 		//应该在ld_issue后一个周期，也就是ld执行一个周期后，再判断是否可以申请dcache_req
@@ -2047,13 +2170,19 @@ module pipeline
         if ((~dcache_busy || ddata_ok) && ~dcache_r_req && ~dcache_w_req) begin
             if (memoccupy_ld && req_enable) begin
                 dcache_r_req <= 1'b1;
+                dcache_w_req <= 1'b0;
                 req_enable <= 1'b0;
             end else if (~memoccupy_ld && stretire) begin
                 dcache_w_req <= 1'b1;
+                dcache_r_req <= 1'b0;
             end
         end
+        else begin
+            dcache_r_req <= 1'b0;
+            dcache_w_req <= 1'b0;
+        end
    end
-
+*/
    storebuf sb
      (
       .clk(clk),
@@ -2074,9 +2203,9 @@ module pipeline
       .retdata(retdata),
       .retaddr(retaddr),
       .retfunct3(retfunct3),
-      .memoccupy_ld(memoccupy_ld),
+      .stretire_en(~dcache_r_req && dcache_req_ok),
       .sb_full(sb_full),
-      .dmem_w_done(cpu_res_ready),
+      //.dmem_w_done(cpu_res_ready),
       .cache_busy(dcache_busy),
       .ldaddr(ldaddr),
       .lddata(lddatasb),
@@ -2105,10 +2234,11 @@ module pipeline
 		      .rrf_we(rrfwe_ldst),
 		      .rob_we(robwe_ldst),
 		      .wrrftag(wrrftag_ldst),
+              .killspec1(kill_ld_req),
 		      .kill_speculative(kill_speculative_ldst),
 		      .busy_next(busy_next_ldst),
-              .cache_busy(dcache_busy),
-              .cache_done(cpu_res_ready),
+              //.cache_busy(dcache_busy),
+              .cache_done(cpu_res_ready[0]),
               //.cache_req(dcache_r_req),
 		      .stfin(stfin),
 		      .memoccupy_ld(memoccupy_ld),

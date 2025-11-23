@@ -20,10 +20,10 @@ module storebuf
    output wire [`DATA_LEN-1:0] 	 retdata,
    output wire [`ADDR_LEN-1:0] 	 retaddr,
    output wire [`MEM_TYPE_WIDTH-1:0] 				 retfunct3,
-   input wire 			 memoccupy_ld,
+   input wire 			 stretire_en,
    output wire 			 sb_full,
-   //ReadSigs
-   input wire[1:0] dmem_w_done,
+   // ReadSigs
+   // input wire[1:0] dmem_w_done,
    input wire cache_busy,
    input wire [`ADDR_LEN-1:0] 	 ldaddr,
    output wire [`DATA_LEN-1:0] 	 lddata,
@@ -95,7 +95,12 @@ module storebuf
    assign lddata = data[ldent];
    assign ldfunct3 = funct3[ldent];
    assign hit_staddr_off = addr[ldent][1:0];
-   assign stretire = valid[retptr] && completed[retptr] && ~(dmem_w_done[1]) && ~prmiss;
+   // 为什么要加prmiss?
+   // 本cycle执行stretire，预期下个cycle，retptr应该会等于retptr + 1
+   // 如果不加，执行了stretire，但prmiss了，retptr就不会在下个cycle变成retptr + 1
+   // 以上是针对原始ridecore的做法的注释
+   // assign stretire = valid[retptr] && completed[retptr] && ~memoccupy_ld && ~(dmem_w_done[1]) && ~prmiss;
+   assign stretire = valid[retptr] && completed[retptr] && stretire_en && ~prmiss;
    assign sb_full = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
    assign finptr_next = (~notfull_next | ~notempty_next) ? finptr :
 			(((nb1 == 0) && (ne1 == `STBUF_ENT_NUM-1)) ? nb0 : (ne1+1));
@@ -182,21 +187,14 @@ module storebuf
      // 如果此时发生prmiss，这样dmem_w_done[1]就错过了，不会有问题？
      // 是不是就会再申请一次写入？
      // 好像是的
-	 if (dmem_w_done[1]) begin
+	 // if (dmem_w_done[1]) begin
+	 if (stretire) begin
 	    retptr <= retptr + 1;
 	    valid[retptr] <= 1'b0;
 	    completed[retptr] <= 1'b0;
 	 end
       end
    end // always @ (posedge clk)
-/*
-   always @ (posedge stretire) begin
-    st_start <= 1;
-   end
-
-   always @ (posedge dmem_w_done) begin
-    st_start <= 0;
-   end*/
 
    always @ (posedge clk) begin
       if (reset | prmiss) begin

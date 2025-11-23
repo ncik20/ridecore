@@ -60,6 +60,7 @@ module decoder(
       //     dmem_write = 1'b0;
       rs_ent = `RS_ENT_ALU;
       alu_op = `ALU_OP_ADD;
+      csr_op = `CSR_READ; 
       
       case (opcode)
 	    `RV32_LOAD : begin

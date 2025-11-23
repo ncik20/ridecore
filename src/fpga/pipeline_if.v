@@ -4,31 +4,35 @@ module pipeline_if
   (
    input wire 			  clk,
    input wire 			  reset,
-   input wire [`ADDR_LEN-1:0] 	  pc,
-   output wire 			  predict_cond,
-   output wire [`ADDR_LEN-1:0] 	  npc,
-   output wire [`INSN_LEN-1:0] 	  inst1,
-   output wire [`INSN_LEN-1:0] 	  inst2,
-   output wire 			  invalid2,
-   input wire 			  btbpht_we,
-   input wire [`ADDR_LEN-1:0] 	  btbpht_pc,
-   input wire [`ADDR_LEN-1:0] 	  btb_jmpdst,
-   input wire 			  pht_wcond,
-   input wire [`SPECTAG_LEN-1:0]  mpft_valid,
-   input wire [`GSH_BHR_LEN-1:0]  pht_bhr,
-   input wire 			  prmiss,
-   input wire 			  prsuccess,
-   input wire [`SPECTAG_LEN-1:0]  prtag,
-   output wire [`GSH_BHR_LEN-1:0] bhr,
-   input wire [`SPECTAG_LEN-1:0]  spectagnow,
-   input wire [4*`INSN_LEN-1:0]   idata
+   input wire [`ADDR_LEN-1:0] 	    pc,
+   input wire [`ADDR_LEN-1:0] 	    cpu_res_pc,
+   output wire                      predict_cond,
+   output wire [`ADDR_LEN-1:0]      npc,
+   output wire [`INSN_LEN-1:0]      inst1,
+   output wire [`INSN_LEN-1:0]      inst2,
+   output wire 			            invalid2,
+   input wire 			            btbpht_we,
+   input wire [`ADDR_LEN-1:0] 	    btbpht_pc,
+   input wire [`ADDR_LEN-1:0] 	    btb_jmpdst,
+   input wire 			            pht_wcond,
+   input wire [`SPECTAG_LEN-1:0]    mpft_valid,
+   input wire [`GSH_BHR_LEN-1:0]    pht_bhr,
+   input wire 			            prmiss,
+   input wire 			            prsuccess,
+   input wire [`SPECTAG_LEN-1:0]    prtag,
+   output wire [`GSH_BHR_LEN-1:0]   bhr,
+   input wire [`SPECTAG_LEN-1:0]    spectagnow,
+   input wire [4*`INSN_LEN-1:0]     idata
    );
 
-   wire 			  hit;
-   wire [`ADDR_LEN-1:0] 	  pred_pc;
+   wire 			        hit;
+   wire [`ADDR_LEN-1:0] 	pred_pc;
+   wire                     pc_invalid2;
 
+   assign pc_invalid2 = (pc[3:2] == 2'b11);
    assign npc = (hit && predict_cond) ? pred_pc :
-		invalid2 ? pc + 4 :
+//		invalid2 ? pc + 4 :
+        pc_invalid2 ? pc + 4 :
 		pc + 8;
 /*   
    imem instmem(
@@ -44,7 +48,7 @@ module pipeline_if
 		     );
    */
    select_logic sellog(
-		       .sel(pc[3:2]),
+		       .sel(cpu_res_pc[3:2]),
 		       .idata(idata),
 		       .inst1(inst1),
 		       .inst2(inst2),
@@ -60,7 +64,8 @@ module pipeline_if
 	     .we(btbpht_we),
 	     .jmpsrc(btbpht_pc),
 	     .jmpdst(btb_jmpdst),
-	     .invalid2(invalid2)
+	     //.invalid2(invalid2)
+         .invalid2(pc_invalid2)
 	     );
 
    gshare_predictor gsh

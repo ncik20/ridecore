@@ -50,6 +50,7 @@ module ldst_byteenable
    );
 
    always @ (*) begin
+        out_data = 32'h0;
         byteenable = 4'b0000;
 	    case(funct3)
             3'b000, 3'b100:begin
@@ -121,11 +122,12 @@ module exunit_ldst
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
    output wire [`RRF_SEL-1:0] 	    wrrftag,
+   output wire                      killspec1,
    output wire 			            kill_speculative,
    output wire 			            busy_next,
    //Signal dcache
-   input wire                       cache_busy,
-   input wire[1:0]                  cache_done,
+   //input wire                       cache_busy,
+   input wire                       cache_done,
    //output reg                       cache_req,
    //Signal StoreBuf
    output wire 			            stfin,
@@ -146,7 +148,7 @@ module exunit_ldst
    reg 				        busy;
    wire 			        clearbusy;
    wire [`ADDR_LEN-1:0]     effaddr;
-   wire                     killspec1;
+   //wire                     killspec1;
    wire                     must_read_mem;
    wire                     sb_ld_ok;
    wire                     ld_ok;
@@ -216,7 +218,7 @@ module exunit_ldst
    //assign lddata = sb_ld_ok ? lddatasb : (ld_io || ~hitsb) ? mem_data : lddatasbmen;
    assign lddata = (ld_io || ~hitsb) ? mem_data : lddatasbmen;
 
-   assign ld_ok = dstval && (sb_ld_ok || cache_done[0]);
+   assign ld_ok = dstval && (sb_ld_ok || cache_done);
    assign clearbusy = (killspec1 || ld_ok || (~dstval && ~fullsb)) ? 1'b1 : 1'b0;
    assign killspec1 = ((spectag & spectagfix) != 0) && specbit && prmiss;
    assign kill_speculative = ((spectag_latch & spectagfix) != 0) && specbit_latch && prmiss;
@@ -246,7 +248,11 @@ module exunit_ldst
    // assign stfin = ~killspec1 & busy & ~dstval;
    assign stfin = ~killspec1 & busy & ~dstval & ~fullsb;
    // load的时候，写dmem，可能因为storebuffer的valid置0导致找不到，从dmem取，又因为store的值还未写入dmem，导致load取到旧值
+   // 上面这个写的什么意思？
    // 非load写dmem，也是以写dmem只需1个cycle为前提，实际写下级存储，要考虑大于1cycle的情况
+   // 上面这个，的确要考虑
+   // 在sb数据写入dcache的stage2开始，在sb就查不到该数据，但此时，还并未写入dcache
+   // 中，此时如果正好有ld在请求该数据，应该考虑直接返回该数据
    assign memoccupy_ld = ~killspec1 & busy & dstval & ~sb_ld_ok;
    assign storedata = ex_src2;
    assign storeaddr = effaddr;
