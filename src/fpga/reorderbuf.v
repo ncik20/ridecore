@@ -15,6 +15,9 @@ module reorderbuf
    input wire [`REG_SEL-1:0] 	  dst_dp1,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp1,
    input wire 			  isbranch_dp1,
+   input wire [`FTQ_SEL-1:0]      ftq_idx1,
+   input wire [3:0]               pc_offset1,
+
    input wire 			  dp2,
    input wire [`RRF_SEL-1:0] 	  dp2_addr,
    input wire [`INSN_LEN-1:0] 	  pc_dp2,
@@ -24,6 +27,9 @@ module reorderbuf
    input wire [`REG_SEL-1:0] 	  dst_dp2,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp2,
    input wire 			  isbranch_dp2,
+   input wire [`FTQ_SEL-1:0]      ftq_idx2,
+   input wire [3:0]               pc_offset2,
+
    input wire 			  exfin_alu1,
    input wire [`RRF_SEL-1:0] 	  exfin_alu1_addr,
    input wire 			  exfin_alu2,
@@ -41,7 +47,15 @@ module reorderbuf
   
    output reg [`RRF_SEL-1:0] 	  comptr,
    output wire [`RRF_SEL-1:0] 	  comptr2,
-   output wire [1:0] 		  comnum,
+   output wire 			  commit1,
+   output wire 			  commit2,
+   output wire [1:0]      comnum,
+
+   output wire [`FTQ_SEL-1:0]      com_ftq_idx1,
+   output wire [`FTQ_SEL-1:0]      com_ftq_idx2,
+   output wire [3:0]               com_pc_offset1,
+   output wire [3:0]               com_pc_offset2,
+
    output wire 			  stcommit,
    output wire 			  csrcommit,
    output wire            retcommit,
@@ -71,8 +85,9 @@ module reorderbuf
    reg [`REG_SEL-1:0] 		  dst       [0:`RRF_NUM-1];
    reg [`GSH_BHR_LEN-1:0] 	  bhr       [0:`RRF_NUM-1];
    reg [1:0]         		  csrbit    [0:`RRF_NUM-1];
+   reg [`FTQ_SEL-1:0] 	      ftq_idx   [0:`RRF_NUM-1];
+   reg [3:0]         		  pc_offset [0:`RRF_NUM-1];
 
-   wire 			          commit2;
    wire [`RRF_SEL-1:0]        next_comptr;
    wire [`ADDR_LEN-1:0] 	  irq_jmpaddr;
 
@@ -81,23 +96,29 @@ module reorderbuf
    wire 			  hidp = (comptr > dispatchptr) || (rrf_freenum == 0) ? 1'b1 : 1'b0;
    wire 			  com_en1 = ({hidp, dispatchptr} - {1'b0, comptr}) > 0 ? 1'b1 : 1'b0;
    wire 			  com_en2 = ({hidp, dispatchptr} - {1'b0, comptr}) > 1 ? 1'b1 : 1'b0;
-   wire 			  commit1 = com_en1 & finish[comptr];
+   assign 			  commit1 = com_en1 & finish[comptr] & ~prmiss & ~irq_flush;
    //   wire commit2 = commit1 & com_en2 & finish[comptr2];
 
-   wire               combranch1 = ~prmiss & commit1 & isbranch[comptr];
-   wire               stcommit1 = ~prmiss & commit1 & storebit[comptr];
+   wire               combranch1 = commit1 & isbranch[comptr];
+   wire               stcommit1 = commit1 & storebit[comptr];
 
    assign commit2 = ~combranch1 & ~stcommit1 & commit1 & com_en2 & finish[comptr2];
    assign next_comptr = comptr + commit1 + commit2;
    assign comnum = {1'b0, commit1} + {1'b0, commit2};
-   assign stcommit = (stcommit1 | (~prmiss & commit2 & storebit[comptr2])) & ~irq_flush;
-   assign csrcommit = ((~prmiss & commit1 & (csrbit[comptr] == 2'b11)) |
-		     (~prmiss & commit2 & (csrbit[comptr2] == 2'b11))) & ~irq_flush;
-   assign arfwe1 = ~prmiss & commit1 & dstvalid[comptr] & ~irq_flush;
-   assign arfwe2 = ~prmiss & commit2 & dstvalid[comptr2] & ~irq_flush;
+   assign stcommit = (stcommit1 | (commit2 & storebit[comptr2]));
+   assign csrcommit = (commit1 & (csrbit[comptr] == 2'b11)) |
+		              (commit2 & (csrbit[comptr2] == 2'b11));
+   assign arfwe1 = commit1 & dstvalid[comptr];
+   assign arfwe2 = commit2 & dstvalid[comptr2];
    assign dstarf1 = dst[comptr];
    assign dstarf2 = dst[comptr2];
-   assign combranch = combranch1 | (~prmiss & commit2 & isbranch[comptr2]);
+
+   assign com_ftq_idx1 = ftq_idx[comptr];
+   assign com_ftq_idx2 = ftq_idx[comptr2];
+   assign com_pc_offset1 = pc_offset[comptr];
+   assign com_pc_offset2 = pc_offset[comptr2];
+
+   assign combranch = combranch1 | (commit2 & isbranch[comptr2]);
    assign retcommit = combranch & ((csrbit[comptr] == 2'b10) || (csrbit[comptr2] == 2'b10));
    assign pc_combranch = combranch1 ? inst_pc[comptr] : inst_pc[comptr2];
    assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
@@ -161,6 +182,10 @@ module reorderbuf
 	 dst[dp1_addr] <= dst_dp1;
 	 bhr[dp1_addr] <= bhr_dp1;
 	 inst_pc[dp1_addr] <= pc_dp1;
+
+	 ftq_idx[dp1_addr] <= ftq_idx1;
+	 pc_offset[dp1_addr] <= pc_offset1;
+
       end
       if (dp2) begin
 	 isbranch[dp2_addr] <= isbranch_dp2;
@@ -170,6 +195,9 @@ module reorderbuf
 	 dst[dp2_addr] <= dst_dp2;
 	 bhr[dp2_addr] <= bhr_dp2;
 	 inst_pc[dp2_addr] <= pc_dp2;
+
+	 ftq_idx[dp2_addr] <= ftq_idx2;
+	 pc_offset[dp2_addr] <= pc_offset2;
       end
 
       if (irq_flush) begin

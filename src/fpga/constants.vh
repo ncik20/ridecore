@@ -3,6 +3,11 @@
 //`define REG_NUM 2**`REG_SEL
 `define REG_NUM 32
 
+`define FTQ_NUM 32
+`define FTQ_SEL 5
+`define IBUF_NUM 64
+`define IBUF_SEL 6
+
 //Instruction
 `define IMM_TYPE_WIDTH 2
 `define IMM_I `IMM_TYPE_WIDTH'd0

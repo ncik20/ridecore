@@ -8,21 +8,30 @@ module btb(
 	   output wire [`ADDR_LEN-1:0] jmpaddr,
 	   input wire 		       we,
 	   input wire [`ADDR_LEN-1:0]  jmpsrc,
-	   input wire [`ADDR_LEN-1:0]  jmpdst,
-	   input wire 		       invalid2
+	   input wire [`ADDR_LEN-1:0]  jmpdst
 	   );
 
    wire [`ADDR_LEN-1:0] 	  tag_data;
-   reg [`BTB_IDX_NUM-1:0] 	  valid;
-   wire [`BTB_IDX_SEL-1:0] 	  waddr = jmpsrc[3+:`BTB_IDX_SEL];
+   reg  [`BTB_IDX_NUM-1:0] 	  valid;
+   wire [`BTB_IDX_SEL-1:0] 	  waddr = jmpsrc[4+:`BTB_IDX_SEL];
    wire [`ADDR_LEN-1:0] 	  pc2 = pc+4;
-   
-   wire 			  hit1 = ((tag_data == pc) && valid[pc[3+:`BTB_IDX_SEL]]) ? 
+   wire [`ADDR_LEN-1:0] 	  pc3 = pc+8;
+   wire [`ADDR_LEN-1:0] 	  pc4 = pc+12;
+   wire                       invalid2 = (pc[3:2] == 2'b11);
+   wire                       invalid3 = (pc[3:2] == 2'b10 || pc[3:2] == 2'b11); 
+   wire                       invalid4 = (pc[3:2] == 2'b01 || pc[3:2] == 2'b10 || pc[3:2] == 2'b11); 
+
+   wire 			  hit1 = ((tag_data == pc) && valid[pc[4+:`BTB_IDX_SEL]]) ? 
 				  1'b1 : 1'b0;
    wire 			  hit2 = ((tag_data == pc2) && ~invalid2 
-					  && valid[pc[3+:`BTB_IDX_SEL]]) ? 1'b1 : 1'b0;
-   assign hit = hit1 | hit2;
-		
+					  && valid[pc[4+:`BTB_IDX_SEL]]) ? 1'b1 : 1'b0;
+   wire 			  hit3 = ((tag_data == pc3) && ~invalid3 
+					  && valid[pc[4+:`BTB_IDX_SEL]]) ? 1'b1 : 1'b0;
+   wire 			  hit4 = ((tag_data == pc4) && ~invalid4 
+					  && valid[pc[4+:`BTB_IDX_SEL]]) ? 1'b1 : 1'b0;
+
+   assign hit = hit1 | hit2 | hit3 | hit4;
+
    always @ (negedge clk) begin
       if (reset) begin
 	 valid <= 0;
@@ -32,11 +41,11 @@ module btb(
 	 end
       end
    end
-   
+
    ram_sync_1r1w #(`BTB_IDX_SEL, `ADDR_LEN, `BTB_IDX_NUM) bia
      (
       .clk(~clk),
-      .raddr1(pc[3+:`BTB_IDX_SEL]),
+      .raddr1(pc[4+:`BTB_IDX_SEL]),
       .rdata1(tag_data),
       .waddr(waddr),
 //    .wdata(jmpsrc[31:3+`BTB_IDX_SEL]),
@@ -47,12 +56,12 @@ module btb(
    ram_sync_1r1w #(`BTB_IDX_SEL, `ADDR_LEN, `BTB_IDX_NUM) bta
      (
       .clk(~clk),
-      .raddr1(pc[3+:`BTB_IDX_SEL]),
+      .raddr1(pc[4+:`BTB_IDX_SEL]),
       .rdata1(jmpaddr),
       .waddr(waddr),
       .wdata(jmpdst),
       .we(we)
       );
-        
+
 endmodule // btb
 `default_nettype wire
