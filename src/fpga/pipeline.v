@@ -39,10 +39,14 @@ module pipeline
    // front
    wire                     full;
    wire [3:0]               insvalid;
-   wire [8:0]               instype;
+   wire [11:0]              instype;
    wire [`FTQ_SEL-1:0]      fetch_ftq_index;
-   wire [`INSN_LEN-1:0]     next_fetch_pc;
+   // wire [`INSN_LEN-1:0]     next_fetch_pc;
    wire                     next_prcond;
+   wire [29:0]              ras_backup;
+   wire [3:0]               rasPtr_backup;
+   wire [29:0]              prmiss_ras;
+   wire [3:0]               prmiss_rasPtr;
 
    wire                     commit1;
    wire                     commit2;
@@ -50,10 +54,20 @@ module pipeline
    wire [`FTQ_SEL-1:0]      com_ftq_idx2;
    wire [3:0]               com_pc_offset1;
    wire [3:0]               com_pc_offset2;
+   wire [11:0]              pc_fetch_info;
+   wire [2:0]               combranch_type;
+
+   wire 		            front_prmiss;
+   wire [`ADDR_LEN-1:0]     front_jmpaddr;
+   wire [`FTQ_SEL-1:0]      front_prmiss_ftq_idx;
+
+   wire  [`GSH_BHR_LEN-1:0] prmiss_bhr;
+   wire                     hit_bht;
+   wire                     pr_cond;
 
    // IF
    // Signal from pipe_if
-   wire     	            prcond;
+   wire     	            predict_cond;
    wire  [`ADDR_LEN-1:0]    pc;
    wire  [`ADDR_LEN-1:0]    npc;
    wire  [`GSH_BHR_LEN-1:0] bhr;
@@ -574,8 +588,8 @@ module pipeline
    wire [`REG_SEL-1:0] 	   dstarf2;
    wire [`ADDR_LEN-1:0]    pc_combranch;
    wire [`GSH_BHR_LEN-1:0] bhr_combranch;
-   wire 		   brcond_combranch;
-   wire 		   combranch;
+   wire 		           brcond_combranch;
+   wire [1:0]		       combranch;
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
 	
     wire dcache_busy;
@@ -621,7 +635,7 @@ module pipeline
    // assign ddata_ok = cpu_res_ready && dcache_busy;
 
    // assign stall_IF = stall_ID | stall_DP | ~idata_ok;
-   assign stall_IF = stall_ID | stall_DP;
+   assign stall_IF = stall_ID | stall_DP | front_prmiss;
 
    // assign irq_flush = irq & mie & idata_ok;
    assign irq_flush = irq & mie & icache_req_ok;
@@ -640,20 +654,29 @@ module pipeline
 		    .reset(reset),
 
             .pc(pc),
-		    .predict_cond(prcond),
+		    .predict_cond(predict_cond),
 		    .npc(npc),
 
-		    .btbpht_we(combranch),
+		    .btbpht_we(combranch != 2'd0),
 		    .btbpht_pc(pc_combranch),
 		    .btb_jmpdst(jmpaddr_combranch),
+            .pc_fetch_info(pc_fetch_info),
+            .combranch_type(combranch_type),
 		    .pht_wcond(brcond_combranch),
 		    // .mpft_valid(mpft_valid),
 		    .pht_bhr(bhr_combranch), //when PHT write
-		    .prmiss(prmiss),
-		    .prsuccess(prsuccess),
+		    .prmiss(prmiss | front_prmiss),
+		    // .prsuccess(prsuccess),
 		    .prtag(buf_spectag_branch),
 		    .bhr(bhr),
-		    .spectagnow(tagreg)
+		    .spectagnow(tagreg),
+            .ras_backup(ras_backup),
+            .rasPtr_backup(rasPtr_backup),
+            .prmiss_ras(prmiss_ras),
+            .prmiss_rasPtr(prmiss_rasPtr),
+            .prmiss_bhr(prmiss_bhr),
+            .hit_bht(hit_bht),
+            .pr_cond(pr_cond)
 		    );
 
    fetch_target_queue ftq(
@@ -679,17 +702,31 @@ module pipeline
             .predict_cond2(predict_cond2_if),
             .bhr2(bhr2_if),
 
-            .pc(pc),
 		    .predict_npc(npc),
-		    .predict_cond(prcond),
+		    .predict_cond(predict_cond),
             .bhr(bhr),
+            .ras_backup(ras_backup),
+            .rasPtr_backup(rasPtr_backup),
+            .hit_bht(hit_bht),
+            .pr_cond(pr_cond),
+
+            .pc(pc),
+            .pc_fetch_info(pc_fetch_info),
+            .combranch_type(combranch_type),
+            .prmiss_ras(prmiss_ras),
+            .prmiss_rasPtr(prmiss_rasPtr),
+            .prmiss_bhr(prmiss_bhr),
 
             .full(full),
             .insvalid(insvalid),
             .instype(instype),
+		    .front_prmiss(front_prmiss),
+		    .front_jmpaddr(front_jmpaddr),
+            .front_prmiss_ftq_idx(front_prmiss_ftq_idx),
+
 		    .fetch_ftq_index(fetch_ftq_index),
 		    .fetch_pc(icache_req_addr),
-		    .next_fetch_pc(next_fetch_pc),
+		    // .next_fetch_pc(next_fetch_pc),
 		    .next_prcond(next_prcond),
 
 		    .icache_req(icache_req),
@@ -701,7 +738,8 @@ module pipeline
 		    .com_ftq_idx1(com_ftq_idx1),
 		    .com_ftq_idx2(com_ftq_idx2),
 		    .com_pc_offset1(com_pc_offset1),
-		    .com_pc_offset2(com_pc_offset2)
+		    .com_pc_offset2(com_pc_offset2),
+            .combranch(combranch)
 		    );
 
    instruction_fetch ifu(
@@ -709,13 +747,13 @@ module pipeline
 		    .reset(reset || kill_IF),
 
 		    .fetch_ftq_index(fetch_ftq_index),
-		    .fetch_pc_sel(icache_req_addr[3:2]),
-		    .next_fetch_pc(next_fetch_pc),
+		    .fetch_pc(icache_req_addr),
+		    // .next_fetch_pc(next_fetch_pc),
 		    .next_prcond(next_prcond),
 
 		    .icache_req(icache_req),
 		    .icache_done(icache_done),
-		    // .cpu_res_pc(cpu_res_pc),
+		    .cpu_res_pc(cpu_res_pc),
 		    .idata(idata),
             .full(full),
             .insvalid(insvalid),
@@ -729,7 +767,11 @@ module pipeline
 		    .inst1(inst1),
 		    .inst2(inst2),
 		    .invalid1(invalid1_pipe),
-		    .invalid2(invalid2_pipe)
+		    .invalid2(invalid2_pipe),
+
+		    .prmiss(front_prmiss),
+		    .jmpaddr(front_jmpaddr),
+            .prmiss_ftq_idx(front_prmiss_ftq_idx)
 		    );
 
    always @ (posedge clk) begin
@@ -756,7 +798,6 @@ module pipeline
 	    inv2_if <= invalid2_pipe;
 
       end 
-/*      
       else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
                                                         // 没有取到数据，需要等待，此时如果
                                                         // ID，DP没有STALL，那就会
@@ -789,7 +830,7 @@ module pipeline
         inv1_if <= 1;
         inv2_if <= 1;
       end
-*/
+
    end // always @ (posedge clk)
 
    //ID Stage********************************************************

@@ -28,18 +28,31 @@ module fetch_target_queue
     input  wire [`ADDR_LEN-1:0]     predict_npc,
     input  wire                     predict_cond,
     input  wire [`GSH_BHR_LEN-1:0]  bhr,
+    input  wire [29:0]              ras_backup,
+    input  wire [3:0]               rasPtr_backup,
+    input  wire                     hit_bht,
+    input  wire                     pr_cond,
+
     // to bpu
     output reg  [`ADDR_LEN-1:0]     pc,
+    output wire [11:0]              pc_fetch_info,
+    output wire [2:0]               combranch_type,
+    output wire [29:0]              prmiss_ras,
+    output wire [3:0]               prmiss_rasPtr,
+    output wire [`GSH_BHR_LEN-1:0]  prmiss_bhr,
 
     // from ifu
     input  wire                     full,
     input  wire [3:0]               insvalid,
-    input  wire [8:0]               instype,
+    input  wire [11:0]              instype,
+    input  wire                     front_prmiss,
+    input  wire [`ADDR_LEN-1:0]     front_jmpaddr,
+    input  wire [`FTQ_SEL-1:0]      front_prmiss_ftq_idx,
     // to ifu
     // output wire                     fetch_req,
     output wire [`FTQ_SEL-1:0]      fetch_ftq_index,
     output wire [`INSN_LEN-1:0]     fetch_pc,
-    output wire [`INSN_LEN-1:0]     next_fetch_pc,
+    // output wire [`INSN_LEN-1:0]     next_fetch_pc,
     output wire                     next_prcond,
 
     // to icache
@@ -54,7 +67,8 @@ module fetch_target_queue
     input  wire [`FTQ_SEL-1:0]      com_ftq_idx1,
     input  wire [`FTQ_SEL-1:0]      com_ftq_idx2,
     input  wire [3:0]               com_pc_offset1,
-    input  wire [3:0]               com_pc_offset2
+    input  wire [3:0]               com_pc_offset2,
+    input  wire [1:0]               combranch
 );
 
 	// localparam FTQ_SEL          = `CLOG2(`FTQ_NUM);
@@ -63,10 +77,15 @@ module fetch_target_queue
     reg  [`ADDR_LEN-1:0]        startAddr       [0:`FTQ_NUM-1];
     reg  [`ADDR_LEN-1:0]        npc             [0:`FTQ_NUM-1];
     reg  [`GSH_BHR_LEN-1:0]     ghr             [0:`FTQ_NUM-1];
+    reg  [`GSH_BHR_LEN-1:0]     ghrBack         [0:`FTQ_NUM-1];
     reg  [`FTQ_NUM-1:0]         prcond;
+
+    reg  [29:0]                 ras             [0:`FTQ_NUM-1];
+    reg  [3:0]                  rasPtr          [0:`FTQ_NUM-1];
+
     // from ifu
     reg  [3:0]                  ins_valid       [0:`FTQ_NUM-1];
-    reg  [7:0]                  ins_type        [0:`FTQ_NUM-1];
+    reg  [11:0]                 ins_type        [0:`FTQ_NUM-1];
 
     // ftq control reg
     reg  [`FTQ_NUM-1:0]         valid;
@@ -79,8 +98,6 @@ module fetch_target_queue
 
     wire [`FTQ_NUM-1:0]         valid_after_prmiss;
 
-    wire [`FTQ_SEL-1:0] prmiss_ftq_idx_plus1 = prmiss_ftq_idx + 1;
-
     wire [3:0] prmiss_invalid = (prmiss_pc_offset == 4'd0) ? 4'b1110 :
                                 (prmiss_pc_offset == 4'd4) ? 4'b1100 :
                                 (prmiss_pc_offset == 4'd8) ? 4'b1000 : 4'b0000;
@@ -89,13 +106,20 @@ module fetch_target_queue
     // wire [`FTQ_SEL-1:0]         index;
 
     // ifuPtr与bpuPtr相等，说明bpuPtr阻塞了，ifuPtr指向的应该已经取过指令了
-    assign icache_req = (ifuPtr != bpuPtr && valid[ifuPtr] && icache_req_ok && ~full) ? 1'b1 : 1'b0;
+    assign icache_req = (~front_prmiss && ifuPtr != bpuPtr && valid[ifuPtr] && icache_req_ok && ~full) ? 1'b1 : 1'b0;
 
     // assign fetch_req = valid[ifuPtr];
     assign fetch_ftq_index = ifuPtr;
     assign fetch_pc = startAddr[ifuPtr];
-    assign next_fetch_pc = npc[ifuPtr];
+    // assign next_fetch_pc = npc[ifuPtr];
     assign next_prcond = prcond[ifuPtr];
+
+    wire [`FTQ_SEL-1:0] com_ftq_idx = (combranch == 2'd1) ? com_ftq_idx1 : com_ftq_idx2;
+    wire [3:0] com_pc_offset = (combranch == 2'd1) ? com_pc_offset1 : com_pc_offset2;
+    assign pc_fetch_info = ins_type[com_ftq_idx];
+    assign combranch_type = (com_pc_offset == 4'd0) ? pc_fetch_info[2:0] :
+                       (com_pc_offset == 4'd4) ? pc_fetch_info[5:3] :
+                       (com_pc_offset == 4'd8) ? pc_fetch_info[8:6] : pc_fetch_info[11:9];
 
     assign start_addr1 = read_en1 ? startAddr[ftq_index1] : 'z;
     assign npc1 = read_en1 ? npc[ftq_index1] : 'z;
@@ -107,14 +131,23 @@ module fetch_target_queue
     assign predict_cond2 = read_en2 ? prcond[ftq_index2] : 'z;
     assign bhr2 = read_en2 ? ghr[ftq_index2] : 'z;
 
+    wire [`FTQ_SEL-1:0] miss_ftq_idx = prmiss ? prmiss_ftq_idx : front_prmiss_ftq_idx;
+
+    wire [`FTQ_SEL-1:0] prmiss_ftq_idx_plus1 = miss_ftq_idx + 1;
+
+    wire prmiss_ = prmiss | front_prmiss;
+    assign prmiss_ras = prmiss_ ? ras[miss_ftq_idx] : 'z;
+    assign prmiss_rasPtr = prmiss_ ? rasPtr[miss_ftq_idx] : 'z;
+    assign prmiss_bhr = prmiss_ ? ghrBack[miss_ftq_idx] : 'z;
+
     genvar i;
 	generate
 		for(i = 0; i < `FTQ_NUM; i = i + 1) begin: set_vaild_prmiss
 			// assign found_in_ftq[i] = (fetch_index[i] == fetch_pc[`ADDR_LEN-1:4]);
 
-            assign valid_after_prmiss[i] = (bpuPtr > prmiss_ftq_idx) ?
-                ((i > prmiss_ftq_idx && i < bpuPtr) ? '0 : valid[i]) :
-                ((i < bpuPtr || i > prmiss_ftq_idx) ? '0 : valid[i]);
+            assign valid_after_prmiss[i] = (bpuPtr > miss_ftq_idx) ?
+                ((i > miss_ftq_idx && i < bpuPtr) ? '0 : valid[i]) :
+                ((i < bpuPtr || i > miss_ftq_idx) ? '0 : valid[i]);
         end
     endgenerate
 
@@ -171,20 +204,26 @@ module fetch_target_queue
         end
         else begin
 
-            if (valid[bpuPtr] == 1'b0) begin
+            if (front_prmiss) begin
+                pc <= front_jmpaddr;
+            end
+            else if (valid[bpuPtr] == 1'b0) begin
 
                 startAddr[bpuPtr] <= pc;
                 npc[bpuPtr] <= predict_npc;
                 ghr[bpuPtr] <= bhr;
+                ghrBack[bpuPtr] <= hit_bht ? {bhr[`GSH_BHR_LEN-2:0], ~pr_cond} : bhr;
                 prcond[bpuPtr] <= predict_cond;
+
+                ras[bpuPtr] <= ras_backup;
+                rasPtr[bpuPtr] <= rasPtr_backup;
 
                 valid[bpuPtr] <= 1'b1;
 
                 bpuPtr <= bpuPtr + 1;
 
                 pc <= predict_npc;
-            end
-            else
+            end else
                 pc <= pc;
 
             if (icache_req) begin
@@ -198,6 +237,17 @@ module fetch_target_queue
                 is_wb[ifuWbPtr] <= 1'b1;
 
                 ifuWbPtr <= ifuWbPtr + 1;
+
+                if (front_prmiss) begin
+
+                    npc[front_prmiss_ftq_idx] <= front_jmpaddr;
+                    prcond[front_prmiss_ftq_idx] <= ~(prcond[front_prmiss_ftq_idx]);
+
+                    bpuPtr <= prmiss_ftq_idx_plus1;
+                    ifuPtr <= prmiss_ftq_idx_plus1;
+
+                    valid <= valid_after_prmiss;
+                end
             end
 
             if (commit1) begin

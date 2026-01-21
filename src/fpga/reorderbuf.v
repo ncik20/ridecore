@@ -67,7 +67,7 @@ module reorderbuf
    output wire [`GSH_BHR_LEN-1:0] bhr_combranch,
    output wire 			  brcond_combranch,
    output wire [`ADDR_LEN-1:0] 	  jmpaddr_combranch,
-   output wire 			  combranch,
+   output wire [1:0]			  combranch,
    output reg [`ADDR_LEN-1:0] 	  mepc,
    input wire [`RRF_SEL-1:0] 	  dispatchptr,
    input wire [`RRF_SEL:0] 	  rrf_freenum,
@@ -118,8 +118,9 @@ module reorderbuf
    assign com_pc_offset1 = pc_offset[comptr];
    assign com_pc_offset2 = pc_offset[comptr2];
 
-   assign combranch = combranch1 | (commit2 & isbranch[comptr2]);
-   assign retcommit = combranch & ((csrbit[comptr] == 2'b10) || (csrbit[comptr2] == 2'b10));
+   assign combranch = combranch1 ? 2'd1 :
+       (commit2 & isbranch[comptr2]) ? 2'd2 : 2'd0;
+   assign retcommit = (combranch != 2'd0) & ((csrbit[comptr] == 2'b10) || (csrbit[comptr2] == 2'b10));
    assign pc_combranch = combranch1 ? inst_pc[comptr] : inst_pc[comptr2];
    assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
    assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];

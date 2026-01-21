@@ -25,7 +25,8 @@ module ram_sync_1r1w #(
       if (we)
 	    begin
 		  mem[waddr] <= wdata;
-		  rdata1 <= wdata;
+		  if (waddr == raddr1) rdata1 <= wdata;
+          else rdata1 <= mem[raddr1];
 	    end
 	  else
 	    rdata1 <= mem[raddr1];

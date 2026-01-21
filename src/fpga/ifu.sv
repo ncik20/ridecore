@@ -7,17 +7,17 @@ module instruction_fetch
     input  wire 			        reset,
 
     input  wire  [`FTQ_SEL-1:0]     fetch_ftq_index,
-    input  wire  [1:0]              fetch_pc_sel,
-    input  wire  [`INSN_LEN-1:0]    next_fetch_pc,
+    input  wire  [`ADDR_LEN-1:0]    fetch_pc,
+    // input  wire  [`ADDR_LEN-1:0]    next_fetch_pc,
     input  wire                     next_prcond,
 
     input  wire                     icache_req,
     input  wire                     icache_done,
-    // input  wire  [`ADDR_LEN-1:0] 	cpu_res_pc,
+    input  wire  [`ADDR_LEN-1:0] 	cpu_res_pc,
     input  wire  [4*`INSN_LEN-1:0]  idata,
     output wire                     full,
     output wire [3:0]               insvalid,
-    output wire [8:0]               instype,
+    output wire [11:0]              instype,
 
     input  wire                     rdreq,
     output reg  [`FTQ_SEL-1:0]      ftq_idx1,
@@ -27,7 +27,11 @@ module instruction_fetch
     output reg  [`INSN_LEN-1:0]     inst1,
     output reg  [`INSN_LEN-1:0] 	inst2,
     output reg                      invalid1,
-    output reg                      invalid2
+    output reg                      invalid2,
+
+    output wire                     prmiss,
+    output wire [`ADDR_LEN-1:0]     jmpaddr,
+    output wire [`FTQ_SEL-1:0]      prmiss_ftq_idx
    );
 
     reg  [`INSN_LEN-1:0]    mem0[0:`IBUF_NUM-1];
@@ -35,10 +39,12 @@ module instruction_fetch
     reg  [`INSN_LEN-1:0]    mem2[0:`IBUF_NUM-1];
     reg  [`INSN_LEN-1:0]    mem3[0:`IBUF_NUM-1];
     reg  [`FTQ_SEL-1:0]     ftq_idx[0:`IBUF_NUM-1];
-    reg  [1:0]              pc_sel[0:`IBUF_NUM-1];
+    reg  [`ADDR_LEN-1:0]    pc[0:`IBUF_NUM-1];
     reg  [`IBUF_NUM-1:0]    prcond;
     reg  [3:0]              valid[0:`IBUF_NUM-1];
     reg  [`IBUF_NUM-1:0]    used;
+    wire [`IBUF_NUM-1:0]    used_after_prmiss;
+    wire [`IBUF_NUM-1:0]    used_set2bit;
 
     reg  [3:0]              read_mask1;
     reg  [3:0]              read_mask2;
@@ -53,13 +59,14 @@ module instruction_fetch
     wire                    valid1;
     wire                    valid2;
     wire                    valid3;
-    wire [1:0]              instype0;
-    wire [1:0]              instype1;
-    wire [1:0]              instype2;
-    wire [1:0]              instype3;
-    wire                    inst0_is_jump;
-    wire                    inst1_is_jump;
-    wire                    inst2_is_jump;
+    wire [2:0]              instype0;
+    wire [2:0]              instype1;
+    wire [2:0]              instype2;
+    wire [2:0]              instype3;
+
+    reg                     pc_err;
+
+    wire [2:0]              first_br_jmp_idx;
 
     assign full = (used[wr_iBufPtr] == 1'b1);
 
@@ -68,50 +75,110 @@ module instruction_fetch
     assign readPtr_valid_cnt = valid[readPtr][0] + valid[readPtr][1] +
         valid[readPtr][2] + valid[readPtr][3];
 
-    assign insvalid = {valid3, valid2, valid1, valid0};
-    assign instype = {instype3, instype2, instype1, instype0};
-
     // assign stall = req_latch && ~icache_done;
     
-    wire nor3 = (instype3 == 2'd0);
-    wire nor23 = (instype2 == 2'd0) & nor3;
-    wire nor123 = (instype1 == 2'd0) & nor23;
-    wire nor0123 = (instype0 == 2'd0) & nor123;
+    wire [1:0] pc_sel = pc[wr_iBufdataPtr][3:2];
+    wire no_jmp_br_prmiss = (icache_done && prcond[wr_iBufdataPtr] &&
+                    ((pc_sel == 2'b00 && instype == 12'd0) ||
+                     (pc_sel == 2'b01 && instype[11-:9] == 9'd0) ||
+                     (pc_sel == 2'b10 && instype[11-:6] == 6'd0) ||
+                     (pc_sel == 2'b11 && instype[11-:3] == 3'd0))) ? 1'b1 : 1'b0;
 
-    wire prmiss = (icache_done && prcond[wr_iBufdataPtr] &&
-                    ((pc_sel[wr_iBufdataPtr] == 2'b00 && nor0123) ||
-                     (pc_sel[wr_iBufdataPtr] == 2'b01 && nor123) ||
-                     (pc_sel[wr_iBufdataPtr] == 2'b10 && nor23) ||
-                     (pc_sel[wr_iBufdataPtr] == 2'b11 && nor3))
-                  ) ? 1'b1 : 1'b0;
+    wire jal_prmiss = (icache_done && ~prcond[wr_iBufdataPtr] &&
+            ((first_br_jmp_idx == 3'd0 && idata[6-:7] == `RV32_JAL) ||
+             (first_br_jmp_idx == 3'd1 && idata[(6+32)-:7] == `RV32_JAL) ||
+             (first_br_jmp_idx == 3'd2 && idata[(6+32*2)-:7] == `RV32_JAL) ||
+             (first_br_jmp_idx == 3'd3 && idata[(6+32*3)-:7] == `RV32_JAL))) ? 1'b1 : 1'b0;
 
-    assign inst0_is_jump = (instype0 == 2'd0 || (instype0 == 2'd1 && ~prcond[wr_iBufdataPtr])) ?
+    assign prmiss = (no_jmp_br_prmiss | jal_prmiss);
+
+    wire [`DATA_LEN-1:0] jal_inst = (first_br_jmp_idx == 3'd0) ? idata[31-:32] :
+                                    (first_br_jmp_idx == 3'd1) ? idata[(31+32)-:32] :
+                                    (first_br_jmp_idx == 3'd2) ? idata[(31+32*2)-:32] :
+                                                                 idata[(31+32*3)-:32];
+
+    wire [`DATA_LEN-1:0] jal_offset = 
+        { {12{jal_inst[31]}}, jal_inst[19:12], jal_inst[20], jal_inst[30:21], 1'b0 };
+
+    assign jmpaddr = jal_prmiss ? (pc[wr_iBufdataPtr] + first_br_jmp_idx * 4 + jal_offset) :
+        (pc_sel == 2'b00) ? (pc[wr_iBufdataPtr] + 16) :
+        (pc_sel == 2'b01) ? (pc[wr_iBufdataPtr] + 12) :
+        (pc_sel == 2'b10) ? (pc[wr_iBufdataPtr] + 8) :
+                            (pc[wr_iBufdataPtr] + 4);
+
+    assign prmiss_ftq_idx = ftq_idx[wr_iBufdataPtr];
+
+    wire inst0_is_jump = (instype0 == 3'd0 || (instype0 == 3'd1 && ~prcond[wr_iBufdataPtr])) ?
         1'b0 : 1'b1;
-    assign inst1_is_jump = (instype1 == 2'd0 || (instype1 == 2'd1 && ~prcond[wr_iBufdataPtr])) ?
+    wire inst1_is_jump = (instype1 == 3'd0 || (instype1 == 3'd1 && ~prcond[wr_iBufdataPtr])) ?
         1'b0 : 1'b1;
-    assign inst2_is_jump = (instype2 == 2'd0 || (instype2 == 2'd1 && ~prcond[wr_iBufdataPtr])) ?
+    wire inst2_is_jump = (instype2 == 3'd0 || (instype2 == 3'd1 && ~prcond[wr_iBufdataPtr])) ?
         1'b0 : 1'b1;
+
+    assign valid0 = (pc_sel == 2'b00) ? 1'b1 : 1'b0;
+
+    assign valid1 = (pc_sel == 2'b10 || pc_sel == 2'b11 ||
+                     (pc_sel == 2'b00 && inst0_is_jump)) ? 1'b0 : 1'b1;
+
+    assign valid2 = (pc_sel == 2'b11 ||
+                     (pc_sel == 2'b00 && (inst0_is_jump || inst1_is_jump)) ||
+                     (pc_sel == 2'b01 && inst1_is_jump)) ? 1'b0 : 1'b1;
+
+    assign valid3 = (
+                     (pc_sel == 2'b00 && (inst0_is_jump || inst1_is_jump || inst2_is_jump)) ||
+                     (pc_sel == 2'b01 && (inst1_is_jump || inst2_is_jump)) ||
+                     (pc_sel == 2'b10 && inst2_is_jump)) ? 1'b0 : 1'b1;
+
+    assign insvalid = {valid3, valid2, valid1, valid0};
+
+    assign instype = {instype3, instype2, instype1, instype0};
+
+    genvar m;
+	generate
+		for(m = 0; m < `IBUF_NUM; m = m + 1) begin: set_used_prmiss
+
+            assign used_after_prmiss[m] = (wr_iBufPtr > wr_iBufdataPtr) ?
+                ((m > wr_iBufdataPtr && m < wr_iBufPtr) ? '0 : used[m]) :
+                ((m < wr_iBufPtr || m > wr_iBufdataPtr) ? '0 : used[m]);
+
+            assign used_set2bit[m] = (m == readPtr || m == readPtr_plus1) ? '0 : used[m];
+        end
+    endgenerate
 
     f_decode fdecode0(
-        .opcode(idata[6:0]),
+        .opcode(idata[6-:7]),
+        .rd(idata[11-:5]),
+        .rs1(idata[19-:5]),
 		.ins_type(instype0)
 		);
 
     f_decode fdecode1(
-        .opcode(idata[38:32]),
+        .opcode(idata[(6+32)-:7]),
+        .rd(idata[(11+32)-:5]),
+        .rs1(idata[(19+32)-:5]),
 		.ins_type(instype1)
 		);
 
     f_decode fdecode2(
-        .opcode(idata[70:64]),
+        .opcode(idata[(6+32*2)-:7]),
+        .rd(idata[(11+32*2)-:5]),
+        .rs1(idata[(19+32*2)-:5]),
 		.ins_type(instype2)
 		);
 
     f_decode fdecode3(
-        .opcode(idata[102:96]),
+        .opcode(idata[(6+32*3)-:7]),
+        .rd(idata[(11+32*3)-:5]),
+        .rs1(idata[(19+32*3)-:5]),
 		.ins_type(instype3)
 		);
 
+   fetch_packet_info fpi_ifu(
+        .pc_sel(pc_sel),
+        .instype(instype),
+        .first_br_jmp_idx(first_br_jmp_idx)
+		);
+/*
     inst_valid inst0_valid(
         .inst_offset(2'd0),
         .icache_done(icache_done),
@@ -150,7 +217,7 @@ module instruction_fetch
         .jump1(inst1_is_jump),
         .jump2(inst2_is_jump),
 		.valid(valid3)
-		);
+		);*/
 
     integer i;
     always_ff @(posedge(clk)) begin
@@ -171,7 +238,7 @@ module instruction_fetch
                 // pc_sel_latch <= fetch_pc_sel;
                 // npc_latch <= next_fetch_pc;
                 ftq_idx[wr_iBufPtr] <= fetch_ftq_index;
-                pc_sel[wr_iBufPtr] <= fetch_pc_sel;
+                pc[wr_iBufPtr] <= fetch_pc;
                 prcond[wr_iBufPtr] <= next_prcond;
 
                 used[wr_iBufPtr] <= 1'b1;
@@ -188,6 +255,17 @@ module instruction_fetch
                 valid[wr_iBufdataPtr] <= insvalid;
 
                 wr_iBufdataPtr <= wr_iBufdataPtr + 1;
+
+                if (cpu_res_pc == pc[wr_iBufdataPtr])
+                    pc_err <= '0;
+                else
+                    pc_err <= 1'b1;
+            end
+
+            if (prmiss) begin
+                wr_iBufPtr <= wr_iBufdataPtr + 1;
+
+                used <= used_after_prmiss;
             end
 
             if (rdreq) begin
@@ -198,8 +276,12 @@ module instruction_fetch
                         valid[readPtr_plus1] == 4'b0100 || 
                         valid[readPtr_plus1] == 4'b1000)
                     begin
-                        used[readPtr] <= '0;
-                        used[readPtr + 1] <= '0;
+                        // 以下代码，有可能会导致used[readPtr]成功设置为0，
+                        // 但是used[readPtr + 1]没有设置为0
+                        // used[readPtr] <= '0;
+                        // used[readPtr + 1] <= '0;
+
+                        used <= used_set2bit;
 
                         readPtr <= readPtr + 2;
                     end
@@ -320,15 +402,33 @@ module instruction_fetch
 endmodule
 
 module f_decode(
-    input  wire [6:0]      opcode,
-    output wire [1:0]       ins_type
+    input  wire [6:0]       opcode,
+    input  wire [4:0]       rd,
+    input  wire [4:0]       rs1,
+    output wire [2:0]       ins_type
     );
 
-    assign ins_type = (opcode == `RV32_BRANCH) ? 2'd1 :
-                      (opcode == `RV32_JAL) ? 2'd2 :
-                      (opcode == `RV32_JALR) ? 2'd3 : 2'd0;
-endmodule
+    assign ins_type = (opcode == `RV32_BRANCH) ? 3'd1 :
 
+        (opcode == `RV32_JAL && (rd != 5'd1 && rd != 5'd5)) ? 3'd2 :
+
+        (opcode == `RV32_JALR && (rd != 5'd1 && rd != 5'd5)
+                              && (rs1 != 5'd1 && rs1 != 5'd5)) ? 3'd3 :
+
+        (
+         (opcode == `RV32_JAL && (rd == 5'd1 || rd == 5'd5)) ||
+         ((opcode == `RV32_JALR && (rd == 5'd1 || rd == 5'd5)) &&
+          ((rs1 != 5'd1 && rs1 != 5'd5) || ((rs1 == 5'd1 || rs1 == 5'd5) && rd == rs1)))
+        ) ? 3'd4 :
+
+        (opcode == `RV32_JALR && (rd != 5'd1 && rd != 5'd5)
+                              && (rs1 == 5'd1 || rs1 == 5'd5)) ? 3'd5 :
+
+        (opcode == `RV32_JALR && (rd == 5'd1 || rd == 5'd5)
+                              && (rs1 == 5'd1 || rs1 == 5'd5)
+                              && rd != rs1) ? 3'd6 : 3'd0;
+endmodule
+/*
 module inst_valid(
     input  wire [1:0]       inst_offset,
     input  wire             icache_done,
@@ -375,6 +475,6 @@ module inst_valid(
             endcase
         end
     end
-endmodule
+endmodule*/
 
 `default_nettype wire
