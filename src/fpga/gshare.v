@@ -34,38 +34,30 @@ module gshare_predictor
    input wire 			 clk,
    input wire 			 reset,
    input wire [`ADDR_LEN-1:0] 	 pc,
-   input wire 		     is_jmp,
    input wire 			 hit_bht,
    output wire 			 predict_cond,
    input wire 			 we,
    input wire 			 wcond,
    input wire [`GSH_PHT_SEL-1:0] went,
-   // input wire [`SPECTAG_LEN-1:0] mpft_valid,
+   input wire [`SPECTAG_LEN-1:0] mpft_valid,
    input wire 			 prmiss,
-   // input wire 			 prsuccess,
+   input wire 			 prsuccess,
    input wire [`SPECTAG_LEN-1:0] prtag,
-   input wire [`GSH_BHR_LEN-1:0] prmiss_bhr,
    output reg [`GSH_BHR_LEN-1:0] bhr_master,
    input wire [`SPECTAG_LEN-1:0] spectagnow
    );
-/*
-   reg [`GSH_BHR_LEN-1:0] 	 bhr[0:7];
-   reg [4:0] 	             valid;
-   reg [2:0]                 rPtr;
-   reg [2:0]                 wPtr;
-
 
    reg [`GSH_BHR_LEN-1:0] 	 bhr0;
    reg [`GSH_BHR_LEN-1:0] 	 bhr1;
    reg [`GSH_BHR_LEN-1:0] 	 bhr2;
    reg [`GSH_BHR_LEN-1:0] 	 bhr3;
    reg [`GSH_BHR_LEN-1:0] 	 bhr4;
-   wire [`GSH_BHR_LEN-1:0] 	 bhr_fix;*/
+   wire [`GSH_BHR_LEN-1:0] 	 bhr_fix;
    wire [1:0] 			 rif;
    wire [1:0] 			 rex;
    wire [1:0] 			 wex;
    wire [2:0] 			 wex_calc;
-/*
+   
    sel_bhrfix sb(
 		 .sel(prtag),
 		 .bhr0(bhr0),
@@ -74,100 +66,30 @@ module gshare_predictor
 		 .bhr3(bhr3),
 		 .bhr4(bhr4),
 		 .out(bhr_fix)
-		 );*/
+		 );
    
-
    always @ (posedge clk) begin
-
       if (reset) begin
-        bhr_master <= 0;
+	 bhr0 <= 0;
+	 bhr1 <= 0;
+	 bhr2 <= 0;
+	 bhr3 <= 0;
+	 bhr4 <= 0;
+	 bhr_master <= 0;
       end else if (prmiss) begin
-        bhr_master <= prmiss_bhr;
-      end else if (hit_bht) begin
-        bhr_master <= {bhr_master[`GSH_BHR_LEN-2:0], predict_cond};
-      end
-
-/*       
-      if (reset) begin
-        bhr[0] <= 0;
-        bhr[1] <= 0;
-        bhr[2] <= 0;
-        bhr[3] <= 0;
-        bhr[4] <= 0;
-        bhr[5] <= 0;
-        bhr[6] <= 0;
-        bhr[7] <= 0;
-        bhr_master <= 0;
-
-        valid <= 0;
-        rPtr <= 0;
-        wPtr <= 0;
-      end else if (prmiss && (valid[rPtr] == 1'b1)) begin
-        // read fifo
-        bhr_master <= bhr[rPtr];
-
-        bhr[0] <= 0;
-        bhr[1] <= 0;
-        bhr[2] <= 0;
-        bhr[3] <= 0;
-        bhr[4] <= 0;
-        bhr[5] <= 0;
-        bhr[6] <= 0;
-        bhr[7] <= 0;
-
-        valid <= 0;
-        rPtr <= 0;
-        wPtr <= 0;
-
-	 // bhr0 <= bhr_fix;
-	 // bhr1 <= bhr_fix;
-	 // bhr2 <= bhr_fix;
-	 // bhr3 <= bhr_fix;
-	 // bhr4 <= bhr_fix;
-	 // bhr_master <= bhr_fix;
-
-      end else begin
-          if (prsuccess && (valid[rPtr] == 1'b1)) begin
-            // pop up the back_bhr by read fifo, do nothing else
-            valid[rPtr] <= 1'b0;
-            rPtr <= rPtr + 1;
-          end
-
-          if (hit_bht && (valid[wPtr] == 1'b0)) begin
-            bhr[wPtr] <= {bhr_master[`GSH_BHR_LEN-2:0], ~predict_cond};
-            bhr_master <= {bhr_master[`GSH_BHR_LEN-2:0], predict_cond};
-
-            valid[wPtr] <= 1'b1;
-            wPtr <= wPtr + 1;
-          end
-      end*/
-/*
-      end else if (prsuccess && (valid[rPtr] == 1'b1)) begin
-        // pop up the back_bhr by read fifo, do nothing else
-        valid[rPtr] <= 1'b0;
-
-        if (rPtr + 1 == 5)
-            rPtr <= 0;
-        else
-            rPtr <= rPtr + 1;*/
-/*
-	 bhr0 <= (prtag == 5'b00001) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr0;
+	 bhr0 <= bhr_fix;
+	 bhr1 <= bhr_fix;
+	 bhr2 <= bhr_fix;
+	 bhr3 <= bhr_fix;
+	 bhr4 <= bhr_fix;
+	 bhr_master <= bhr_fix;
+      end else if (prsuccess) begin
+	 bhr0 <= (prtag == 5'b00001) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr0; 
 	 bhr1 <= (prtag == 5'b00010) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr1;
 	 bhr2 <= (prtag == 5'b00100) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr2;
 	 bhr3 <= (prtag == 5'b01000) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr3;
 	 bhr4 <= (prtag == 5'b10000) ? {bhr_master[`GSH_BHR_LEN-2:0], predict_cond} : bhr4;
-*/
-/*
-      end else if (hit_bht && (valid[wPtr] == 1'b0)) begin
-        bhr[wPtr] <= {bhr_master[`GSH_BHR_LEN-2:0], ~predict_cond};
-        bhr_master <= {bhr_master[`GSH_BHR_LEN-2:0], predict_cond};
-
-        valid[wPtr] <= 1'b1;
-        if (wPtr + 1 == 5)
-            wPtr <= 0;
-        else
-            wPtr <= wPtr + 1;*/
-/*
+      end else if (hit_bht) begin
 	 if (we & mpft_valid[0]) begin
 	    bhr0 <= {bhr0[`GSH_BHR_LEN-2:0], predict_cond};
 	 end
@@ -186,11 +108,10 @@ module gshare_predictor
 	 if (we) begin
 	    bhr_master <= {bhr_master[`GSH_BHR_LEN-2:0], predict_cond};
 	 end
-*/
-//      end
+      end
    end
-  
-   assign predict_cond = is_jmp | ((hit_bht && (rif > 2'b01)) ? 1'b1 : 1'b0);
+   
+   assign predict_cond = (hit_bht && (rif > 2'b01)) ? 1'b1 : 1'b0;
    assign wex_calc = {1'b0, rex} + (wcond ? 3'b001 : 3'b111);
    assign wex = ((rex == 2'b00) && ~wcond) ? 2'b00 :
 		((rex == 2'b11) && wcond) ? 2'b11 : wex_calc[1:0];
@@ -198,8 +119,7 @@ module gshare_predictor
    pht prhisttbl
      (
       .clk(clk),
-      // .raddr_if(pc[2+:`GSH_BHR_LEN] ^ bhr_master),
-      .raddr_if(pc[4+:`GSH_BHR_LEN] ^ bhr_master),
+      .raddr_if(pc[2+:`GSH_BHR_LEN] ^ bhr_master),
       .raddr_ex(went),
       .waddr_ex(went),
       .rdata_if(rif),

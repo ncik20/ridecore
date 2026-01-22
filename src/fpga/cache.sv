@@ -24,7 +24,7 @@ module dm_cache_data_pl(
 
 	//assign data_read = data_mem[index];
 
-	always_ff @(posedge clk) begin
+	always_ff @(posedge(clk)) begin
 
         if (data_req1.en) begin
             if (data_req1.we) begin
@@ -87,7 +87,7 @@ module dm_cache_tag_pl(
     cache_tag_type tag_mem[0:511];
 
     integer i;
-	always_ff @(posedge clk) begin
+	always_ff @(posedge(clk)) begin
         if (rst) begin
 		    for (int i=0; i<512; i++) begin
 		        tag_mem[i] <= '0;
@@ -283,7 +283,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 
     assign accept_req = cpu_req_valid && ~cpu_req_kill && ((|v_cpu_res.ready) || ~busy);
 
-	always_ff @(posedge clk) begin
+	always_ff @(posedge(clk)) begin
         if (rst) begin
             
             req_kill_latch <= '0;

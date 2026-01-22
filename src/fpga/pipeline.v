@@ -8,9 +8,8 @@ module pipeline
   (
    input wire 			            clk,
    input wire 			            reset,
-   output wire                      icache_req,
    output wire                      kill_icache_req,
-   output wire [`ADDR_LEN-1:0] 	    icache_req_addr,
+   output reg  [`ADDR_LEN-1:0] 	    pc,
    input wire  [`ADDR_LEN-1:0] 	    cpu_res_pc,
    input wire  [4*`INSN_LEN-1:0]    idata,
 
@@ -35,83 +34,34 @@ module pipeline
    wire  kill_ID;
    wire  stall_DP;
    wire  kill_DP;
+//   reg [`ADDR_LEN-1:0] pc;
 
-   // front
-   wire                     full;
-   wire [3:0]               insvalid;
-   wire [11:0]              instype;
-   wire [`FTQ_SEL-1:0]      fetch_ftq_index;
-   // wire [`INSN_LEN-1:0]     next_fetch_pc;
-   wire                     next_prcond;
-   wire [29:0]              ras_backup;
-   wire [3:0]               rasPtr_backup;
-   wire [29:0]              prmiss_ras;
-   wire [3:0]               prmiss_rasPtr;
-
-   wire                     commit1;
-   wire                     commit2;
-   wire [`FTQ_SEL-1:0]      com_ftq_idx1;
-   wire [`FTQ_SEL-1:0]      com_ftq_idx2;
-   wire [3:0]               com_pc_offset1;
-   wire [3:0]               com_pc_offset2;
-   wire [11:0]              pc_fetch_info;
-   wire [2:0]               combranch_type;
-
-   wire 		            front_prmiss;
-   wire [`ADDR_LEN-1:0]     front_jmpaddr;
-   wire [`FTQ_SEL-1:0]      front_prmiss_ftq_idx;
-
-   wire  [`GSH_BHR_LEN-1:0] prmiss_bhr;
-   wire                     hit_bht;
-   wire                     pr_cond;
-
-   // IF
+   //IF
    // Signal from pipe_if
-   wire     	            predict_cond;
-   wire  [`ADDR_LEN-1:0]    pc;
-   wire  [`ADDR_LEN-1:0]    npc;
-   wire  [`GSH_BHR_LEN-1:0] bhr;
-   wire  [`FTQ_SEL-1:0]     ftq_idx1;
-   wire  [`FTQ_SEL-1:0]     ftq_idx2;
-   wire  [3:0]              pc_offset1;
-   wire  [3:0]              pc_offset2;
-   wire  [`INSN_LEN-1:0]    inst1;
-   wire  [`INSN_LEN-1:0]    inst2;
-   wire 		            invalid1_pipe;
+   wire     	            prcond;
+   wire [`ADDR_LEN-1:0]     npc;
+   wire [`INSN_LEN-1:0]     inst1;
+   wire [`INSN_LEN-1:0]     inst2;
    wire 		            invalid2_pipe;
-
+   wire [`GSH_BHR_LEN-1:0]  bhr;
    
-   // Instruction Buffer
-   // reg 			            prcond_if;
-   // reg 			            prcond_latch;
-   // reg [`ADDR_LEN-1:0] 	    npc_if;
-   // reg [`ADDR_LEN-1:0] 	    npc_latch;
-   reg  [`FTQ_SEL-1:0]      ftq_idx1_if;
-   reg  [`FTQ_SEL-1:0]      ftq_idx2_if;
-   reg  [3:0]               pc_offset1_if;
-   reg  [3:0]               pc_offset2_if;
-   reg  [`INSN_LEN-1:0] 	inst1_if;
-   reg  [`INSN_LEN-1:0] 	inst2_if;
+   //Instruction Buffer
+   reg 			            prcond_if;
+   reg 			            prcond_latch;
+   reg [`ADDR_LEN-1:0] 	    npc_if;
+   reg [`ADDR_LEN-1:0] 	    npc_latch;
+   reg [`ADDR_LEN-1:0] 	    pc_if;
+   reg [`INSN_LEN-1:0] 	    inst1_if;
+   reg [`INSN_LEN-1:0] 	    inst2_if;
    reg 			            inv1_if;
    reg 			            inv2_if;
-   wire [`ADDR_LEN-1:0] 	pc1_if;
-   wire [`ADDR_LEN-1:0] 	pc2_if;
-   wire [`ADDR_LEN-1:0] 	start_addr1_if;
-   wire [`ADDR_LEN-1:0] 	start_addr2_if;
-   wire [`ADDR_LEN-1:0] 	npc1_if;
-   wire [`ADDR_LEN-1:0] 	npc2_if;
-   wire [`GSH_BHR_LEN-1:0]  bhr1_if;
-   wire [`GSH_BHR_LEN-1:0]  bhr2_if;
-   wire                     predict_cond1_if;
-   wire                     predict_cond2_if;
-
-   // reg [`GSH_BHR_LEN-1:0]   bhr_if;
-   // reg                      bhr_if;
-   // reg [`GSH_BHR_LEN-1:0]   bhr_latch;
+   //reg [`GSH_BHR_LEN-1:0]   bhr_if;
+   reg                      bhr_if;
+   reg [`GSH_BHR_LEN-1:0]   bhr_latch;
    wire 		            attachable;
 
-   // ID
-   // Decode Info1
+   //ID
+   //Decode Info1
    wire [`IMM_TYPE_WIDTH-1:0] imm_type_1;
    wire [`REG_SEL-1:0] 	      rs1_1;
    wire [`REG_SEL-1:0] 	      rs2_1;
@@ -131,7 +81,7 @@ module pipeline
    wire 		       md_req_in_1_signed_1;
    wire 		       md_req_in_2_signed_1;
    wire [`MD_OUT_SEL_WIDTH-1:0] md_req_out_sel_1;
-   // Decode Info2
+   //Decode Info2
    wire [`IMM_TYPE_WIDTH-1:0] 	imm_type_2;
    wire [`REG_SEL-1:0] 		rs1_2;
    wire [`REG_SEL-1:0] 		rs2_2;
@@ -151,7 +101,7 @@ module pipeline
    wire 			md_req_in_1_signed_2;
    wire 			md_req_in_2_signed_2;
    wire [`MD_OUT_SEL_WIDTH-1:0] md_req_out_sel_2;
-   // Additional Info
+   //Additional Info
    wire [`SPECTAG_LEN-1:0] 	sptag1;
    wire [`SPECTAG_LEN-1:0] 	sptag2;
    wire [`SPECTAG_LEN-1:0] 	tagreg;
@@ -159,11 +109,11 @@ module pipeline
    wire 			spec2;
    wire 			isbranch1;
    wire 			isbranch2;
-   wire 			prcond1;
-   wire 			prcond2;
+   wire 			branchvalid1;
+   wire 			branchvalid2;
    
-   // Latch
-   // Decode Info1
+   //Latch
+   //Decode Info1
    reg [`IMM_TYPE_WIDTH-1:0] 	imm_type_1_id;
    reg [`REG_SEL-1:0] 		rs1_1_id;
    reg [`REG_SEL-1:0] 		rs2_1_id;
@@ -183,7 +133,7 @@ module pipeline
    reg 				md_req_in_1_signed_1_id;
    reg 				md_req_in_2_signed_1_id;
    reg [`MD_OUT_SEL_WIDTH-1:0] 	md_req_out_sel_1_id;
-   // Decode Info2
+   //Decode Info2
    reg [`IMM_TYPE_WIDTH-1:0] 	imm_type_2_id;
    reg [`REG_SEL-1:0] 		rs1_2_id;
    reg [`REG_SEL-1:0] 		rs2_2_id;
@@ -203,12 +153,12 @@ module pipeline
    reg 				md_req_in_1_signed_2_id;
    reg 				md_req_in_2_signed_2_id;
    reg [`MD_OUT_SEL_WIDTH-1:0] 	md_req_out_sel_2_id;
-   // Additional Info
+   //Additional Info
    reg 				rs1_2_eq_dst1_id;
    reg 				rs2_2_eq_dst1_id;
    reg [`SPECTAG_LEN-1:0] 	sptag1_id;
    reg [`SPECTAG_LEN-1:0] 	sptag2_id;
-   // reg [`SPECTAG_LEN-1:0] 	tagreg_id;
+   reg [`SPECTAG_LEN-1:0] 	tagreg_id;
    reg 				spec1_id;
    reg 				spec2_id;
    reg [`INSN_LEN-1:0] 		inst1_id;
@@ -219,19 +169,13 @@ module pipeline
    reg 				inv2_id;
    reg [`ADDR_LEN-1:0] 		praddr1_id;
    reg [`ADDR_LEN-1:0] 		praddr2_id;
-   reg [`ADDR_LEN-1:0] 		pc1_id;
-   reg [`ADDR_LEN-1:0] 		pc2_id;
-   reg [`GSH_BHR_LEN-1:0] 	bhr1_id;
-   reg [`GSH_BHR_LEN-1:0] 	bhr2_id;
+   reg [`ADDR_LEN-1:0] 		pc_id;
+   reg [`GSH_BHR_LEN-1:0] 	bhr_id;
    reg 				isbranch1_id;
    reg 				isbranch2_id;
-   reg  [`FTQ_SEL-1:0]      ftq_idx1_id;
-   reg  [`FTQ_SEL-1:0]      ftq_idx2_id;
-   reg  [3:0]               pc_offset1_id;
-   reg  [3:0]               pc_offset2_id;
 
-   // DP
-   // Source Operand Manager wire
+   //DP
+   //Source Operand Manager wire
    wire [`DATA_LEN-1:0] opr1_1;
    wire [`DATA_LEN-1:0] opr2_1;
    wire [`DATA_LEN-1:0] opr1_2;
@@ -241,7 +185,7 @@ module pipeline
    wire 		rdy1_2;
    wire 		rdy2_2;
 
-   // rrf_FL wire
+   //rrf_FL wire
    wire 		alloc_rrf;
    wire [`RRF_SEL-1:0] 	dst1_renamed;
    wire [`RRF_SEL-1:0] 	dst2_renamed;
@@ -249,7 +193,7 @@ module pipeline
    wire [`RRF_SEL-1:0] 	rrfptr;
    wire [`RRF_SEL-1:0] 	rrftagfix;
 
-   // arf wire 
+   //arf wire 
    wire [`RRF_SEL-1:0] 	rs1_1tag;
    wire [`RRF_SEL-1:0] 	rs2_1tag;
    wire [`RRF_SEL-1:0] 	rs1_2tag;
@@ -263,7 +207,7 @@ module pipeline
    wire 		abusy1_2;
    wire 		abusy2_2;
 
-   // rrf wire
+   //rrf wire
    wire [`DATA_LEN-1:0] rdat1_1;
    wire [`DATA_LEN-1:0] rdat2_1;
    wire [`DATA_LEN-1:0] rdat1_2;
@@ -275,7 +219,7 @@ module pipeline
    wire [`DATA_LEN-1:0] com1data;
    wire [`DATA_LEN-1:0] com2data;
    
-   // Src Manager wire
+   //Src Manager wire
    wire [`DATA_LEN-1:0] src1_1; //To reservation station
    wire [`DATA_LEN-1:0] src2_1; 
    wire [`DATA_LEN-1:0] src1_2;
@@ -285,14 +229,14 @@ module pipeline
    wire 		resolved1_2;
    wire 		resolved2_2;
 
-   // Immgen wire
+   //Immgen wire
    wire [`DATA_LEN-1:0] imm1; // To reservation station
    wire [`DATA_LEN-1:0] imm2;
-   // BrImmgen wire
+   //BrImmgen wire
    wire [`DATA_LEN-1:0] brimm1; //To reservation station
    wire [`DATA_LEN-1:0] brimm2;
    
-   // RS Request Generator wire
+   //RS Request Generator wire
    wire 		req1_alu;
    wire 		req2_alu;
    wire [1:0] 		req_alunum;
@@ -399,10 +343,8 @@ module pipeline
    wire [`ALU_OP_WIDTH-1:0]    alu_op_branch;
    wire [`SPECTAG_LEN-1:0]     spectag_branch;
    wire 		       specbit_branch;
-   // wire [`GSH_BHR_LEN-1:0]     bhr_branch;
-   // wire 		       prcond_branch;
-   wire [`FTQ_SEL-1:0]      ftq_idx_branch;
-   wire [3:0]               pc_offset_branch;
+   wire [`GSH_BHR_LEN-1:0]     bhr_branch;
+   wire 		       prcond_branch;
    wire [`ADDR_LEN-1:0]        praddr_branch;
    wire [6:0] 		       opcode_branch;
 
@@ -444,8 +386,8 @@ module pipeline
    wire [`SPECTAG_LEN-1:0]     spectag_csr;
    wire                specbit_csr;
 
-   // EX
-   // ALU1
+   //EX
+   //ALU1
    wire [`DATA_LEN-1:0]        result_alu1;
    wire 		       rrfwe_alu1;
    wire 		       robwe_alu1;
@@ -462,7 +404,7 @@ module pipeline
    reg [`ALU_OP_WIDTH-1:0]     buf_alu_op_alu1;
    reg [`SPECTAG_LEN-1:0]      buf_spectag_alu1;
    reg 			       buf_specbit_alu1;
-   // ALU2
+   //ALU2
    wire [`DATA_LEN-1:0]        result_alu2;
    wire 		       rrfwe_alu2;
    wire 		       robwe_alu2;
@@ -480,7 +422,7 @@ module pipeline
    reg [`SPECTAG_LEN-1:0]      buf_spectag_alu2;
    reg 			       buf_specbit_alu2;
 
-   // LDST
+   //LDST
    wire [`DATA_LEN-1:0]        result_ldst;
    wire 		       rrfwe_ldst;
    wire 		       robwe_ldst;
@@ -511,7 +453,7 @@ module pipeline
    reg [`SPECTAG_LEN-1:0]      buf_spectag_ldst;
    reg 			       buf_specbit_ldst;
 
-   // MUL
+   //MUL
    wire [`DATA_LEN-1:0]        result_mul;
    wire 		       rrfwe_mul;
    wire 		       robwe_mul;
@@ -528,7 +470,7 @@ module pipeline
    reg 			       buf_src2_signed_mul;
    reg 			       buf_sel_lohi_mul;
    
-   // CSR
+   //CSR
    wire [`DATA_LEN-1:0]        result_csr;
    wire 		       rrfwe_csr;
    wire 		       robwe_csr;
@@ -542,7 +484,7 @@ module pipeline
    reg [`SPECTAG_LEN-1:0]      buf_spectag_csr;
    reg 			       buf_specbit_csr;
 
-   // BRANCH
+   //BRANCH
    wire 		       prmiss;
    wire 		       prsuccess;
    wire [`ADDR_LEN-1:0]        jmpaddr;
@@ -564,18 +506,14 @@ module pipeline
    reg [`ALU_OP_WIDTH-1:0]     buf_alu_op_branch;
    reg [`SPECTAG_LEN-1:0]      buf_spectag_branch;
    reg 			       buf_specbit_branch;
-
-   reg [`FTQ_SEL-1:0]      buf_ftq_idx_branch;
-   reg [3:0]               buf_pc_offset_branch;
-
    reg [`ADDR_LEN-1:0] 	       buf_praddr_branch;
    reg [6:0] 		       buf_opcode_branch;
    
-   // miss prediction fix table
+   //miss prediction fix table
    wire [`SPECTAG_LEN-1:0] mpft_valid;
    wire [`SPECTAG_LEN-1:0] spectagfix;
 
-   // COM
+   //COM
    wire [`RRF_SEL-1:0] 	   comptr;
    wire [`RRF_SEL-1:0] 	   comptr2;
    wire [1:0] 		   comnum;
@@ -588,8 +526,8 @@ module pipeline
    wire [`REG_SEL-1:0] 	   dstarf2;
    wire [`ADDR_LEN-1:0]    pc_combranch;
    wire [`GSH_BHR_LEN-1:0] bhr_combranch;
-   wire 		           brcond_combranch;
-   wire [1:0]		       combranch;
+   wire 		   brcond_combranch;
+   wire 		   combranch;
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
 	
     wire dcache_busy;
@@ -622,6 +560,20 @@ module pipeline
 
     wire [1:0]      hit_staddr_off;
 
+    wire            iBuf_almost_empty;
+    wire            iBuf_almost_full;
+    wire            iBuf_empty;
+    wire            iBuf_full;
+    wire [143:0]    iBuf_w_data;
+    wire [143:0]    iBuf_r_data;
+
+    wire            read_iBuf;
+    // reg             iBuf_not_empty;
+    // reg             cur_state;
+    // reg             next_state;
+    // reg             need_;
+
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
@@ -635,7 +587,7 @@ module pipeline
    // assign ddata_ok = cpu_res_ready && dcache_busy;
 
    // assign stall_IF = stall_ID | stall_DP | ~idata_ok;
-   assign stall_IF = stall_ID | stall_DP | front_prmiss;
+   assign stall_IF = stall_ID | stall_DP;
 
    // assign irq_flush = irq & mie & idata_ok;
    assign irq_flush = irq & mie & icache_req_ok;
@@ -649,156 +601,178 @@ module pipeline
    assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
    assign system_ins_priv2 = |(inst2_id[14:12]);
 
-   branch_predictor bpu(
-	        .clk(clk),
-		    .reset(reset),
+   always @ (posedge clk) begin
 
-            .pc(pc),
-		    .predict_cond(predict_cond),
-		    .npc(npc),
+      if (reset) begin
 
-		    .btbpht_we(combranch != 2'd0),
-		    .btbpht_pc(pc_combranch),
-		    .btb_jmpdst(jmpaddr_combranch),
-            .pc_fetch_info(pc_fetch_info),
-            .combranch_type(combranch_type),
-		    .pht_wcond(brcond_combranch),
-		    // .mpft_valid(mpft_valid),
-		    .pht_bhr(bhr_combranch), //when PHT write
-		    .prmiss(prmiss | front_prmiss),
-		    // .prsuccess(prsuccess),
-		    .prtag(buf_spectag_branch),
-		    .bhr(bhr),
-		    .spectagnow(tagreg),
-            .ras_backup(ras_backup),
-            .rasPtr_backup(rasPtr_backup),
-            .prmiss_ras(prmiss_ras),
-            .prmiss_rasPtr(prmiss_rasPtr),
-            .prmiss_bhr(prmiss_bhr),
-            .hit_bht(hit_bht),
-            .pr_cond(pr_cond)
-		    );
+		 pc <= `ENTRY_POINT;
 
-   fetch_target_queue ftq(
-            .clk(clk),
-		    .reset(reset),
-            .irq_flush(irq_flush),
-		    .prmiss(prmiss),
-            .jmpaddr(jmpaddr),
-            .prmiss_ftq_idx(buf_ftq_idx_branch),
-            .prmiss_pc_offset(buf_pc_offset_branch),
+	     // jmpaddr_is_latch <= 0;
 
-            .read_en1(~inv1_if),
-            .ftq_index1(ftq_idx1_if),
-            .start_addr1(start_addr1_if),
-            .npc1(npc1_if),
-            .predict_cond1(predict_cond1_if),
-            .bhr1(bhr1_if),
+         // jmp_addr <= 0;
 
-            .read_en2(~inv2_if),
-            .ftq_index2(ftq_idx2_if),
-            .start_addr2(start_addr2_if),
-            .npc2(npc2_if),
-            .predict_cond2(predict_cond2_if),
-            .bhr2(bhr2_if),
+         // latch npc信息
+         npc_latch <= 0;
+         bhr_latch <= 0;
+         prcond_latch <= 0;
+      end else if (irq_flush) begin
 
-		    .predict_npc(npc),
-		    .predict_cond(predict_cond),
-            .bhr(bhr),
-            .ras_backup(ras_backup),
-            .rasPtr_backup(rasPtr_backup),
-            .hit_bht(hit_bht),
-            .pr_cond(pr_cond),
+         pc <= `IRQ_POINT;
 
-            .pc(pc),
-            .pc_fetch_info(pc_fetch_info),
-            .combranch_type(combranch_type),
-            .prmiss_ras(prmiss_ras),
-            .prmiss_rasPtr(prmiss_rasPtr),
-            .prmiss_bhr(prmiss_bhr),
+         // jmp_addr <= `IRQ_POINT;
+/*
+      //end else if (jmpaddr_is_latch && idata_ok) begin
+      end else if (jmpaddr_is_latch && icache_req_ok) begin
 
-            .full(full),
-            .insvalid(insvalid),
-            .instype(instype),
-		    .front_prmiss(front_prmiss),
-		    .front_jmpaddr(front_jmpaddr),
-            .front_prmiss_ftq_idx(front_prmiss_ftq_idx),
+		 pc <= jmpaddr_latch;
+         jmpaddr_is_latch <= 0;
 
-		    .fetch_ftq_index(fetch_ftq_index),
-		    .fetch_pc(icache_req_addr),
-		    // .next_fetch_pc(next_fetch_pc),
-		    .next_prcond(next_prcond),
+         jmp_addr <= jmpaddr_latch;
+*/
+      //end else if (prmiss && idata_ok) begin
+      //end else if (prmiss && icache_req_ok) begin
+      end else if (prmiss) begin
 
-		    .icache_req(icache_req),
-            .icache_req_ok(icache_req_ok),
-		    .icache_done(icache_done),
+		 pc <= jmpaddr;
 
-		    .commit1(commit1),
-		    .commit2(commit2),
-		    .com_ftq_idx1(com_ftq_idx1),
-		    .com_ftq_idx2(com_ftq_idx2),
-		    .com_pc_offset1(com_pc_offset1),
-		    .com_pc_offset2(com_pc_offset2),
-            .combranch(combranch)
-		    );
+         // jmp_addr <= jmpaddr;
 
-   instruction_fetch ifu(
-            .clk(clk),
-		    .reset(reset || kill_IF),
+      end else if (~icache_req_ok) begin
+         pc <= pc;
+/*
+         if (prmiss && ~jmpaddr_is_latch) begin
+            jmpaddr_latch <= jmpaddr;
+            jmpaddr_is_latch <= 1'b1;
+         end
+*/
+      end 
+      else begin
+         pc <= npc;
 
-		    .fetch_ftq_index(fetch_ftq_index),
-		    .fetch_pc(icache_req_addr),
-		    // .next_fetch_pc(next_fetch_pc),
-		    .next_prcond(next_prcond),
+         // latch npc信息
+         npc_latch <= npc;
+         bhr_latch <= bhr;
+         prcond_latch <= prcond;
+      end
 
-		    .icache_req(icache_req),
-		    .icache_done(icache_done),
-		    .cpu_res_pc(cpu_res_pc),
-		    .idata(idata),
-            .full(full),
-            .insvalid(insvalid),
-            .instype(instype),
+   end
+	
+   pipeline_if pipe_if(
+		       .clk(clk),
+		       .reset(reset),
+               .pc(pc),
+		       .cpu_res_pc(cpu_res_pc),
+		       .predict_cond(prcond),
+		       .npc(npc),
+		       .inst1(inst1),
+		       .inst2(inst2),
+		       .invalid2(invalid2_pipe),
+		       .btbpht_we(combranch),
+		       .btbpht_pc(pc_combranch),
+		       .btb_jmpdst(jmpaddr_combranch),
+		       .pht_wcond(brcond_combranch),
+		       .mpft_valid(mpft_valid),
+		       .pht_bhr(bhr_combranch), //when PHT write
+		       .prmiss(prmiss),
+		       .prsuccess(prsuccess),
+		       .prtag(buf_spectag_branch),
+		       .bhr(bhr),
+		       .spectagnow(tagreg),
+		       .idata(idata)
+		       );
 
-	        .rdreq(~stall_IF),
-		    .ftq_idx1(ftq_idx1),
-		    .ftq_idx2(ftq_idx2),
-		    .pc_offset1(pc_offset1),
-		    .pc_offset2(pc_offset2),
-		    .inst1(inst1),
-		    .inst2(inst2),
-		    .invalid1(invalid1_pipe),
-		    .invalid2(invalid2_pipe),
+   assign iBuf_w_data = {inst2, inst1, npc_latch, cpu_res_pc, bhr_latch, prcond_latch, invalid2_pipe, 4'h0};
 
-		    .prmiss(front_prmiss),
-		    .jmpaddr(front_jmpaddr),
-            .prmiss_ftq_idx(front_prmiss_ftq_idx)
-		    );
+   assign read_iBuf = ~stall_IF && ~iBuf_almost_empty;
 
+   fifo iBuffer(
+            .clock(clk),
+	        .data(iBuf_w_data),
+	        .rdreq(read_iBuf),
+            //.sclr(reset || (jmpaddr_is_latch && icache_req_ok) || (prmiss && icache_req_ok)),
+            .sclr(reset || kill_IF),
+	        .wrreq(icache_done),    // 暂时不考虑full不能写入的情况
+	        .almost_empty(iBuf_almost_empty),
+	        //.almost_full(iBuf_almost_full),
+	        .empty(iBuf_empty),
+	        .full(iBuf_full),
+	        .q(iBuf_r_data)
+            );
+/*
+   always @ (posedge clk) begin
+
+      if (iBuf_almost_empty)
+        iBuf_not_empty <= 0;
+      else
+        iBuf_not_empty <= 1'b1;
+
+      if (reset) cur_state <= 0;
+      else cur_state <= next_state;
+   end
+
+   always @(*) begin
+      need_ = 0;
+      next_state = cur_state;
+      case (cur_state)
+        0:if ((jmpaddr_is_latch && icache_req_ok) || (prmiss && icache_req_ok)) next_state = 1;
+        1:begin
+            need_ = 1;
+            if (jmp_addr == iBuf_r_data[47-:32]) begin
+                need_ = 0;
+                next_state = 0;
+            end
+        end
+       endcase
+   end
+*/
    always @ (posedge clk) begin
       if (reset || kill_IF) begin
+	    prcond_if <= 0;
+	    npc_if <= 0;
+	    pc_if <= 0;
+	    inst1_if <= 0;
+	    inst2_if <= 0;
+	    inv1_if <= 1;
+	    inv2_if <= 1;
+	    bhr_if <= 0;
 
-        ftq_idx1_if <= 0;
-        ftq_idx2_if <= 0;
-        pc_offset1_if <= 0;
-        pc_offset2_if <= 0;
-        inst1_if <= 0;
-        inst2_if <= 0;
-        inv1_if <= 1'b1;
-        inv2_if <= 1'b1;
+      //end else if (~stall_IF && icache_done) begin
+      end else if (read_iBuf) begin
 
-      end else if (~stall_IF) begin
+        prcond_if <= iBuf_r_data[5];
+        npc_if <= iBuf_r_data[79-:32];
+        pc_if <= iBuf_r_data[47-:32];
+        inst1_if <= iBuf_r_data[111-:32];
+        inst2_if <= iBuf_r_data[143-:32];
+        inv1_if <= 0;
+        inv2_if <= iBuf_r_data[4];
+        bhr_if <= iBuf_r_data[15-:10];
+/*
+        if (need_ && jmp_addr != iBuf_r_data[47-:32]) begin
+            inv1_if <= 1;
+            inv2_if <= 1;
+        end
+        else begin
+            prcond_if <= iBuf_r_data[5];
+            npc_if <= iBuf_r_data[79-:32];
+            pc_if <= iBuf_r_data[47-:32];
+            inst1_if <= iBuf_r_data[111-:32];
+            inst2_if <= iBuf_r_data[143-:32];
+            inv1_if <= 0;
+            inv2_if <= iBuf_r_data[4];
+            bhr_if <= iBuf_r_data[15-:10];
+        end
 
-        ftq_idx1_if <= ftq_idx1;
-        ftq_idx2_if <= ftq_idx2;
-        pc_offset1_if <= pc_offset1;
-        pc_offset2_if <= pc_offset2;
+	    prcond_if <= prcond;
+	    npc_if <= npc;
+	    pc_if <= cpu_res_pc;
 	    inst1_if <= inst1;
 	    inst2_if <= inst2;
-	    inv1_if <= invalid1_pipe;
+	    inv1_if <= 0;
 	    inv2_if <= invalid2_pipe;
-
-      end 
-      else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
+	    bhr_if <= bhr;
+*/
+      end else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
                                                         // 没有取到数据，需要等待，此时如果
                                                         // ID，DP没有STALL，那就会
                                                         // 重新执行之前latch的指令
@@ -830,7 +804,6 @@ module pipeline
         inv1_if <= 1;
         inv2_if <= 1;
       end
-
    end // always @ (posedge clk)
 
    //ID Stage********************************************************
@@ -843,24 +816,15 @@ module pipeline
 		      1'b1 : 1'b0;
    assign isbranch2 = (~inv2_if && (rs_ent_2 == `RS_ENT_BRANCH)) ?
 		      1'b1 : 1'b0;
-   assign prcond1 = isbranch1 & predict_cond1_if;
-   // inv2_if已经根据同时发射的第一条指令是否跳转，为前提设置了，所以不需要以下判断
-   // assign branchvalid1 = isbranch1 & prcond_if;
-   // assign branchvalid2 = isbranch2 & ~branchvalid1;
-
-   assign prcond2 = (ftq_idx1_if == ftq_idx2_if) ?
-         (isbranch2 & predict_cond1_if) : (isbranch2 & predict_cond2_if);
-
-   assign pc1_if = {start_addr1_if[`ADDR_LEN-1:4], 4'b0000} + pc_offset1_if;
-   assign pc2_if = {start_addr2_if[`ADDR_LEN-1:4], 4'b0000} + pc_offset2_if;
+   assign branchvalid1 = isbranch1 & prcond_if;
+   assign branchvalid2 = isbranch2 & ~branchvalid1;
    
    tag_generator taggen(
 			.clk(clk),
 			.reset(reset),
             .irq_flush(irq_flush),
 			.branchvalid1(isbranch1),
-            // .branchvalid2(branchvalid2),
-			.branchvalid2(isbranch2),
+			.branchvalid2(branchvalid2),
 			.prmiss(prmiss),
 			.prsuccess(prsuccess),
 			.enable(~stall_ID & ~stall_DP),
@@ -964,7 +928,7 @@ module pipeline
   	 rs2_2_eq_dst1_id <= 0;
 	 sptag1_id <= 0;
 	 sptag2_id <= 0;
-//	 tagreg_id <= 0;
+	 tagreg_id <= 0;
 //	 spec1_id <= 0;
 //	 spec2_id <= 0;
 	 inst1_id <= 0;
@@ -975,17 +939,10 @@ module pipeline
 	 inv2_id <= 1;
 	 praddr1_id <= 0;
 	 praddr2_id <= 0;
-	 pc1_id <= 0;
-	 pc2_id <= 0;
-	 bhr1_id <= 0;
-	 bhr2_id <= 0;
+	 pc_id <= 0;
+	 bhr_id <= 0;
 	 isbranch1_id <= 0;
 	 isbranch2_id <= 0;
-
-     ftq_idx1_id <= 0;
-     ftq_idx2_id <= 0;
-     pc_offset1_id <= 0;
-     pc_offset2_id <= 0;
 	 
       end else if (~stall_DP) begin
 	 imm_type_1_id <= imm_type_1;
@@ -1019,9 +976,7 @@ module pipeline
 	 illegal_instruction_2_id <= illegal_instruction_2;
 	 alu_op_2_id <= alu_op_2;
 	 csr_op_2_id <= csr_op_2;
-     // inv2_if已经根据同时发射的第一条指令是否跳转，为前提设置了，所以不需要以下判断
-	 // rs_ent_2_id <= (inv2_if || (predict_cond1_if && isbranch1)) ? 0 : rs_ent_2;
-     rs_ent_2_id <= inv2_if ? 0 : rs_ent_2;
+	 rs_ent_2_id <= (inv2_if | (prcond_if & isbranch1)) ? 0 : rs_ent_2;
 	 dmem_size_2_id <= dmem_size_2;
 	 dmem_type_2_id <= dmem_type_2;
 	 md_req_op_2_id <= md_req_op_2;
@@ -1033,41 +988,27 @@ module pipeline
   	 rs2_2_eq_dst1_id <= (rs2_2 == rd_1 && wr_reg_1) ? 1'b1 : 1'b0;
 	 sptag1_id <= sptag1;
 	 sptag2_id <= sptag2;
-//	 tagreg_id <= tagreg;
+	 tagreg_id <= tagreg;
 //	 spec1_id <= spec1;
 //	 spec2_id <= spec2;
 	 inst1_id <= inst1_if;
 	 inst2_id <= inst2_if;
-	 prcond1_id <= prcond1;
-	 prcond2_id <= prcond2;
+	 prcond1_id <= prcond_if & isbranch1;
+	 prcond2_id <= isbranch2 & prcond_if & ~isbranch1;
 	 inv1_id <= inv1_if;
-	 // inv2_id <= inv2_if | (prcond_if & isbranch1);
-	 inv2_id <= inv2_if;
+	 inv2_id <= inv2_if | (prcond_if & isbranch1);
 	 /*
 	 praddr1_id <= prcond_if & isbranch1 ? npc_if : pc_if + 4;
 	 praddr2_id <= prcond_if & ~isbranch1 & isbranch2 ?
 		       npc_if : pc_if + 8;
 	  */
-     // 取指的第一条指令确认是branch指令，但是预测不跳转，则该branch指令预测的地址
-     // 就应该是该指令pc+4，而不是npc，因为npc是该指令pc+8
-	 praddr1_id <= prcond1 ? npc1_if : (pc1_if + 4);
-	 // praddr2_id <= npc_if;   // 不存在第二条指令是跳转指令，然后不跳转的情况？
-                                // 因为第二条指令是跳转，且有效，那不跳转，
-                                // npc就是pc+8
-	 praddr2_id <= (ftq_idx1_if == ftq_idx2_if) ? (prcond2 ? npc1_if : (pc2_if + 4)) :
-         (prcond2 ? npc2_if : (pc2_if + 4));
-	 pc1_id <= pc1_if;
-	 pc2_id <= pc2_if;
-	 bhr1_id <= bhr1_if;
-	 bhr2_id <= bhr2_if;
+	 praddr1_id <= (prcond_if & isbranch1) ? npc_if : (pc_if + 4);
+	 praddr2_id <= npc_if;
+	 pc_id <= pc_if;
+	 bhr_id <= bhr_if;
 	 isbranch1_id <= isbranch1;
 	 isbranch2_id <= isbranch2;
-
-     ftq_idx1_id <= ftq_idx1_if;
-     ftq_idx2_id <= ftq_idx2_if;
-     pc_offset1_id <= pc_offset1_if;
-     pc_offset2_id <= pc_offset2_if;
-
+	 
       end
    end
 
@@ -1504,7 +1445,7 @@ module pipeline
 			      allocent2_alu[`ALU_ENT_SEL:1] : 
 			      allocent1_alu[`ALU_ENT_SEL:1]), //allocent2
 		      //WriteSignal1
-		      .wpc_1(pc1_id),
+		      .wpc_1(pc_id),
 		      .wsrc1_1(src1_1),
 		      .wsrc2_1(src2_1),
 		      .wvalid1_1(~uses_rs1_1_id | resolved1_1),
@@ -1518,7 +1459,7 @@ module pipeline
 		      .wspectag_1(sptag1_id),
 		      .wspecbit_1(spec1_id),
 		      //WriteSignal2
-		      .wpc_2(pc2_id),
+		      .wpc_2(pc_id + 4),
 		      .wsrc1_2(src1_2),
 		      .wsrc2_2(src2_2),
 		      .wvalid1_2(~uses_rs1_2_id | resolved1_2),
@@ -1587,7 +1528,7 @@ module pipeline
 			      allocent2_alu[`ALU_ENT_SEL:1] : 
 			      allocent1_alu[`ALU_ENT_SEL:1]), //allocent2
 		      //WriteSignal1
-		      .wpc_1(pc1_id),
+		      .wpc_1(pc_id),
 		      .wsrc1_1(src1_1),
 		      .wsrc2_1(src2_1),
 		      .wvalid1_1(~uses_rs1_1_id | resolved1_1),
@@ -1601,7 +1542,7 @@ module pipeline
 		      .wspectag_1(sptag1_id),
 		      .wspecbit_1(spec1_id),
 		      //WriteSignal2
-		      .wpc_2(pc2_id),
+		      .wpc_2(pc_id + 4),
 		      .wsrc1_2(src1_2),
 		      .wsrc2_2(src2_2),
 		      .wvalid1_2(~uses_rs1_2_id | resolved1_2),
@@ -1690,7 +1631,7 @@ module pipeline
 		       .waddr1(allocent1_ldst), //allocent1
 		       .waddr2(req1_ldst ? allocent2_ldst : allocent1_ldst), //allocent2
 		       //WriteSignal1
-		       .wpc_1(pc1_id),
+		       .wpc_1(pc_id),
 		       .wsrc1_1(src1_1),
 		       .wsrc2_1(src2_1),
 		       .wvalid1_1(~uses_rs1_1_id | resolved1_1),
@@ -1702,7 +1643,7 @@ module pipeline
 		       .wspectag_1(sptag1_id),
 		       .wspecbit_1(spec1_id),
 		       //WriteSignal2
-		       .wpc_2(pc2_id),
+		       .wpc_2(pc_id + 4),
 		       .wsrc1_2(src1_2),
 		       .wsrc2_2(src2_2),
 		       .wvalid1_2(~uses_rs1_2_id | resolved1_2),
@@ -1786,7 +1727,7 @@ module pipeline
 			   .waddr1(allocent1_branch), //allocent1
 			   .waddr2(req1_branch ? allocent2_branch : allocent1_branch), //allocent2
 			   //WriteSignal1
-			   .wpc_1(pc1_id),
+			   .wpc_1(pc_id),
 			   .wsrc1_1(src1_1),
 			   .wsrc2_1(src2_1),
 			   .wvalid1_1(~uses_rs1_1_id | resolved1_1),
@@ -1797,14 +1738,12 @@ module pipeline
 			   .walu_op_1(alu_op_1_id),
 			   .wspectag_1(sptag1_id),
 			   .wspecbit_1(spec1_id),
-			   // .wbhr_1(bhr1_id),
-			   // .wprcond_1(prcond1_id),
-			   .wftq_idx_1(ftq_idx1_id),
-			   .wpc_offset_1(pc_offset1_id),
+			   .wbhr_1(bhr_id),
+			   .wprcond_1(prcond1_id),
 			   .wpraddr_1(praddr1_id),
 			   .wopcode_1(inst1_id[6:0]),
 			   //WriteSignal2
-			   .wpc_2(pc2_id),
+			   .wpc_2(pc_id + 4),
 			   .wsrc1_2(src1_2),
 			   .wsrc2_2(src2_2),
 			   .wvalid1_2(~uses_rs1_2_id | resolved1_2),
@@ -1815,10 +1754,8 @@ module pipeline
 			   .walu_op_2(alu_op_2_id),
 			   .wspectag_2(sptag2_id),
 			   .wspecbit_2(spec2_id),
-			   // .wbhr_2(bhr2_id),
-			   // .wprcond_2(prcond2_id),
-			   .wftq_idx_2(ftq_idx2_id),
-			   .wpc_offset_2(pc_offset2_id),
+			   .wbhr_2(bhr_id),
+			   .wprcond_2(prcond2_id),
 			   .wpraddr_2(praddr2_id),
 			   .wopcode_2(inst2_id[6:0]),
 			   //ReadSignal
@@ -1832,10 +1769,8 @@ module pipeline
 			   .alu_op(alu_op_branch),
 			   .spectag(spectag_branch),
 			   .specbit(specbit_branch),
-			   // .bhr(bhr_branch),
-			   // .prcond(prcond_branch),
-			   .ftq_idx(ftq_idx_branch),
-			   .pc_offset(pc_offset_branch),
+			   .bhr(bhr_branch),
+			   .prcond(prcond_branch),
 			   .praddr(praddr_branch),
 			   .opcode(opcode_branch),
 			   //EXRSLT
@@ -2419,8 +2354,6 @@ module pipeline
 	 buf_alu_op_branch <= 0;
 	 buf_spectag_branch <= 0;
 	 buf_specbit_branch <= 0;
-	 buf_ftq_idx_branch <= 0;
-	 buf_pc_offset_branch <= 0;
 	 buf_praddr_branch <= 0;
 	 buf_opcode_branch <= 0;
       end else if (issue_branch) begin
@@ -2433,8 +2366,6 @@ module pipeline
 	 buf_alu_op_branch <= alu_op_branch;
 	 buf_spectag_branch <= spectag_branch;
 	 buf_specbit_branch <= specbit_branch;
-	 buf_ftq_idx_branch <= ftq_idx_branch;
-	 buf_pc_offset_branch <= pc_offset_branch;
 	 buf_praddr_branch <= praddr_branch;
 	 buf_opcode_branch <= opcode_branch;
       end
@@ -2480,8 +2411,7 @@ module pipeline
 				  .setspec1_tag(sptag1),
 				  .setspec1_en(isbranch1 & ~stall_ID & ~stall_DP),
 				  .setspec2_tag(sptag2),
-				  // .setspec2_en(branchvalid2 & ~stall_ID & ~stall_DP)
-                  .setspec2_en(isbranch2 & ~stall_ID & ~stall_DP)
+				  .setspec2_en(branchvalid2 & ~stall_ID & ~stall_DP)
 				  );
    
    //COM Stage*******************************************************
@@ -2491,28 +2421,22 @@ module pipeline
           .irq_flush(irq_flush),
 		  .dp1(~stall_DP & ~kill_DP & ~inv1_id),
 		  .dp1_addr(dst1_renamed),
-		  .pc_dp1(pc1_id),
+		  .pc_dp1(pc_id),
 		  .storebit_dp1(inst1_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
 		  .csrbit_dp1({system_ins1, system_ins_priv1}),
 		  .dstvalid_dp1(wr_reg_1_id),
 		  .dst_dp1(rd_1_id),
-		  .bhr_dp1(bhr1_id),
+		  .bhr_dp1(bhr_id),
 		  .isbranch_dp1(req1_branch),
-		  .ftq_idx1(ftq_idx1_id),
-		  .pc_offset1(pc_offset1_id),
-
 		  .dp2(~stall_DP & ~kill_DP & ~inv2_id),
 		  .dp2_addr(dst2_renamed),
-		  .pc_dp2(pc2_id),
+		  .pc_dp2(pc_id + 4),
 		  .storebit_dp2(inst2_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
 		  .csrbit_dp2({system_ins2, system_ins_priv2}),
 		  .dstvalid_dp2(wr_reg_2_id),
 		  .dst_dp2(rd_2_id),
-		  .bhr_dp2(bhr2_id),
+		  .bhr_dp2(bhr_id),
 		  .isbranch_dp2(req2_branch),
-		  .ftq_idx2(ftq_idx2_id),
-		  .pc_offset2(pc_offset2_id),
-
 		  .exfin_alu1(robwe_alu1),
 		  .exfin_alu1_addr(buf_rrftag_alu1),
 		  .exfin_alu2(robwe_alu2),
@@ -2530,13 +2454,7 @@ module pipeline
 
 		  .comptr(comptr),
 		  .comptr2(comptr2),
-		  .commit1(commit1),
-		  .commit2(commit2),
 		  .comnum(comnum),
-		  .com_ftq_idx1(com_ftq_idx1),
-		  .com_ftq_idx2(com_ftq_idx2),
-		  .com_pc_offset1(com_pc_offset1),
-		  .com_pc_offset2(com_pc_offset2),
 		  .stcommit(stcommit),
           .csrcommit(csrcommit),
           .retcommit(retcommit),
