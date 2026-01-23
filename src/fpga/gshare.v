@@ -34,6 +34,7 @@ module gshare_predictor
    input wire 			 clk,
    input wire 			 reset,
    input wire [`ADDR_LEN-1:0] 	 pc,
+   input wire 		     is_jmp,
    input wire 			 hit_bht,
    output wire 			 predict_cond,
    input wire 			 we,
@@ -111,7 +112,7 @@ module gshare_predictor
       end
    end
    
-   assign predict_cond = (hit_bht && (rif > 2'b01)) ? 1'b1 : 1'b0;
+   assign predict_cond = is_jmp | ((hit_bht && (rif > 2'b01)) ? 1'b1 : 1'b0);
    assign wex_calc = {1'b0, rex} + (wcond ? 3'b001 : 3'b111);
    assign wex = ((rex == 2'b00) && ~wcond) ? 2'b00 :
 		((rex == 2'b11) && wcond) ? 2'b11 : wex_calc[1:0];
@@ -119,7 +120,7 @@ module gshare_predictor
    pht prhisttbl
      (
       .clk(clk),
-      .raddr_if(pc[2+:`GSH_BHR_LEN] ^ bhr_master),
+      .raddr_if(pc[4+:`GSH_BHR_LEN] ^ bhr_master),
       .raddr_ex(went),
       .waddr_ex(went),
       .rdata_if(rif),

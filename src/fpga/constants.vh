@@ -3,6 +3,9 @@
 //`define REG_NUM 2**`REG_SEL
 `define REG_NUM 32
 
+`define IBUF_NUM 32
+`define IBUF_SEL 5
+
 //Instruction
 `define IMM_TYPE_WIDTH 2
 `define IMM_I `IMM_TYPE_WIDTH'd0
@@ -53,7 +56,7 @@
 `define BTB_IDX_NUM 512
 //`define BTB_IDX_NUM 2**`BTB_IDX_SEL
 //`define BTB_TAG_LEN `ADDR_LEN-3-`BTB_IDX_SEL
-`define BTB_TAG_LEN 20
+`define BTB_TAG_LEN 19
 
 //Gshare
 `define GSH_BHR_LEN 10

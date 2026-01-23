@@ -15,6 +15,7 @@ module reorderbuf
    input wire [`REG_SEL-1:0] 	  dst_dp1,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp1,
    input wire 			  isbranch_dp1,
+   input wire [11:0]      instype_dp1,
    input wire 			  dp2,
    input wire [`RRF_SEL-1:0] 	  dp2_addr,
    input wire [`INSN_LEN-1:0] 	  pc_dp2,
@@ -24,6 +25,7 @@ module reorderbuf
    input wire [`REG_SEL-1:0] 	  dst_dp2,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp2,
    input wire 			  isbranch_dp2,
+   input wire [11:0]      instype_dp2,
    input wire 			  exfin_alu1,
    input wire [`RRF_SEL-1:0] 	  exfin_alu1_addr,
    input wire 			  exfin_alu2,
@@ -53,6 +55,7 @@ module reorderbuf
    output wire [`GSH_BHR_LEN-1:0] bhr_combranch,
    output wire 			  brcond_combranch,
    output wire [`ADDR_LEN-1:0] 	  jmpaddr_combranch,
+   output wire [11:0] 	  instype_combranch,
    output wire 			  combranch,
    output reg [`ADDR_LEN-1:0] 	  mepc,
    input wire [`RRF_SEL-1:0] 	  dispatchptr,
@@ -67,6 +70,7 @@ module reorderbuf
    reg [`RRF_NUM-1:0] 		  isbranch;
    
    reg [`ADDR_LEN-1:0] 		  inst_pc   [0:`RRF_NUM-1];
+   reg [11:0]         		  instype   [0:`RRF_NUM-1];
    reg [`ADDR_LEN-1:0] 		  jmpaddr   [0:`RRF_NUM-1];   
    reg [`REG_SEL-1:0] 		  dst       [0:`RRF_NUM-1];
    reg [`GSH_BHR_LEN-1:0] 	  bhr       [0:`RRF_NUM-1];
@@ -103,6 +107,7 @@ module reorderbuf
    assign bhr_combranch = combranch1 ? bhr[comptr] : bhr[comptr2];
    assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];
    assign jmpaddr_combranch = combranch1 ? jmpaddr[comptr] : jmpaddr[comptr2];
+   assign instype_combranch = combranch1 ? instype[comptr] : instype[comptr2];
 
    // next_comptr-1是最后一条commit的指令，如果是分支且跳转，那返回地址应
    // 该是跳转地址，否则就返回下一条commit指令的pc
@@ -161,6 +166,7 @@ module reorderbuf
 	 dst[dp1_addr] <= dst_dp1;
 	 bhr[dp1_addr] <= bhr_dp1;
 	 inst_pc[dp1_addr] <= pc_dp1;
+     instype[dp1_addr] <= instype_dp1;
       end
       if (dp2) begin
 	 isbranch[dp2_addr] <= isbranch_dp2;
@@ -170,6 +176,7 @@ module reorderbuf
 	 dst[dp2_addr] <= dst_dp2;
 	 bhr[dp2_addr] <= bhr_dp2;
 	 inst_pc[dp2_addr] <= pc_dp2;
+     instype[dp2_addr] <= instype_dp2;
       end
 
       if (irq_flush) begin

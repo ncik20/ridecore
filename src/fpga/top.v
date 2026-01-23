@@ -40,8 +40,13 @@ module top
    );
 
    wire [`ADDR_LEN-1:0]     pc;
-
+   wire [`ADDR_LEN-1:0]     cpu_res_pc;
    wire [4*`INSN_LEN-1:0]   idata;
+
+   wire                     icache_req;
+   wire                     kill_icache_req;
+   wire [1:0]               icache_done;
+   wire                     icache_busy;
 
    wire [1:0]               dmem_we;
    wire [`ADDR_LEN-1:0]     dmem_addr;
@@ -57,11 +62,8 @@ module top
    wire [4*`INSN_LEN-1:0]   imem_data;
    wire                     imem_done;
 
-   wire [1:0] icache_done;
-   wire       icache_busy;
-
-   reg [1:0]  rw_flag_;
-   reg        prog_loading;
+   reg                      rw_flag_;
+   reg                      prog_loading;
 
    wire [31:0] rdata4test;
    assign pc_reg4test = {pc[15:0], rdata4test[15:0]};
@@ -80,7 +82,11 @@ module top
      (
       .clk(clk),
       .reset(~reset_n | prog_loading),
+      .icache_req(icache_req),
+      .kill_icache_req(kill_icache_req),
+      // .icache_req_addr(pc),
       .pc(pc),
+      .cpu_res_pc(cpu_res_pc),
       .idata(idata),
 
       .dmem_we(dmem_we),
@@ -92,6 +98,9 @@ module top
 
       .icache_done(icache_done[0]),
       .icache_busy(icache_busy),
+
+      .irq(1'b0),
+      // .irq(irq),
 
       .raddr4test(5'd15),
       .rdata4test(rdata4test)
@@ -157,14 +166,15 @@ module top
       .mem_done(iomem_done)
             );*/
 
-   dm_cache_fsm icache(
+   dm_cache_pl icache(
         .clk(clk),
         .rst(~reset_n), 
         .cpu_req_addr(pc),
         .cpu_req_data(32'h0),
         .cpu_req_funct3(3'b010),
         .cpu_req_rw(1'b0),
-        .cpu_req_valid(rw_flag_[0]),
+        .cpu_req_valid(rw_flag_ & icache_req),
+        .cpu_req_kill(kill_icache_req),
 
         .mem_data_data(imem_data),
         .mem_data_ready(imem_done),
@@ -173,6 +183,7 @@ module top
         .mem_req_rw(imem_we),
         //.mem_req_valid
 
+        .cpu_res_pc(cpu_res_pc),
         .cpu_res_data(idata),
         .cpu_res_ready(icache_done),
         .busy(icache_busy)

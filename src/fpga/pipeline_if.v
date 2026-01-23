@@ -5,15 +5,12 @@ module pipeline_if
    input wire 			  clk,
    input wire 			  reset,
    input wire [`ADDR_LEN-1:0] 	    pc,
-   input wire [`ADDR_LEN-1:0] 	    cpu_res_pc,
    output wire                      predict_cond,
    output wire [`ADDR_LEN-1:0]      npc,
-   output wire [`INSN_LEN-1:0]      inst1,
-   output wire [`INSN_LEN-1:0]      inst2,
-   output wire 			            invalid2,
    input wire 			            btbpht_we,
    input wire [`ADDR_LEN-1:0] 	    btbpht_pc,
    input wire [`ADDR_LEN-1:0] 	    btb_jmpdst,
+   input wire [11:0]                btb_instype,
    input wire 			            pht_wcond,
    input wire [`SPECTAG_LEN-1:0]    mpft_valid,
    input wire [`GSH_BHR_LEN-1:0]    pht_bhr,
@@ -21,19 +18,24 @@ module pipeline_if
    input wire 			            prsuccess,
    input wire [`SPECTAG_LEN-1:0]    prtag,
    output wire [`GSH_BHR_LEN-1:0]   bhr,
-   input wire [`SPECTAG_LEN-1:0]    spectagnow,
-   input wire [4*`INSN_LEN-1:0]     idata
+   input wire [`SPECTAG_LEN-1:0]    spectagnow
    );
 
    wire 			        hit;
+   wire 			        is_jmp;
+   wire 			        have_br_jmp;
+   wire                     pr_cond;
    wire [`ADDR_LEN-1:0] 	pred_pc;
-   wire                     pc_invalid2;
 
-   assign pc_invalid2 = (pc[3:2] == 2'b11);
+   wire hit_bht = hit && have_br_jmp;
+
+   assign predict_cond = ~hit ? pr_cond :
+                                is_jmp ? 1'b1 : (pr_cond & have_br_jmp);
    assign npc = (hit && predict_cond) ? pred_pc :
-//		invalid2 ? pc + 4 :
-        pc_invalid2 ? pc + 4 :
-		pc + 8;
+        (pc[3:2] == 2'b00) ? (pc + 16) :
+        (pc[3:2] == 2'b01) ? (pc + 12) :
+        (pc[3:2] == 2'b10) ? (pc + 8) : (pc + 4);
+
 /*   
    imem instmem(
 		.clk(~clk),
@@ -46,7 +48,7 @@ module pipeline_if
 		     .pc(pc[31:4]),
 		     .idata(idata)
 		     );
-   */
+
    select_logic sellog(
 		       .sel(cpu_res_pc[3:2]),
 		       .idata(idata),
@@ -54,30 +56,35 @@ module pipeline_if
 		       .inst2(inst2),
 		       .invalid(invalid2)
 		       );
-
+   */
    btb brtbl(
 	     .clk(clk),
 	     .reset(reset),
 	     .pc(pc),
 	     .hit(hit),
+	     .is_jmp(is_jmp),
+	     .have_br_jmp(have_br_jmp),
 	     .jmpaddr(pred_pc),
 	     .we(btbpht_we),
 	     .jmpsrc(btbpht_pc),
 	     .jmpdst(btb_jmpdst),
 	     //.invalid2(invalid2)
-         .invalid2(pc_invalid2)
-	     );
+         //.invalid2(pc_invalid2)
+         .instype(btb_instype)
+         );
 
    gshare_predictor gsh
      (
       .clk(clk),
       .reset(reset),
       .pc(pc),
-      .hit_bht(hit),
-      .predict_cond(predict_cond),
+	  .is_jmp(is_jmp),
+      .hit_bht(hit_bht),
+      .predict_cond(pr_cond),
       .we(btbpht_we),
       .wcond(pht_wcond),
-      .went(btbpht_pc[2+:`GSH_BHR_LEN] ^ pht_bhr),
+      // .went(btbpht_pc[2+:`GSH_BHR_LEN] ^ pht_bhr),
+      .went(btbpht_pc[4+:`GSH_BHR_LEN] ^ pht_bhr),
       .mpft_valid(mpft_valid),
       .prmiss(prmiss),
       .prsuccess(prsuccess),

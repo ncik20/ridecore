@@ -1,129 +1,236 @@
 `include "define.v"
 `include "constants.vh"
 
-module top
+module top #(
+  //PLIC Parameters
+  parameter SOURCES           = 7,  //Number of interrupt sources
+  parameter TARGETS           = 1,  //Number of interrupt targets
+  parameter PRIORITIES        = 8,  //Number of Priority levels
+  parameter MAX_PENDING_COUNT = 1,  //Max. number of 'pending' events
+  parameter HAS_THRESHOLD     = 1,  //Is 'threshold' implemented?
+  parameter HAS_CONFIG_REG    = 0   //Is the 'configuration' register implemented?
+)
   (
-//   input 	    CLK_P,
-//   input 	    CLK_N,
-//   input 	    RST_X_IN,
-//   output 	    TXD,
-//   input 	    RXD,
-//   output reg [7:0] LED
-   input clk,
-   input reset_x
+   input                    clk,
+   input                    reset_x,
+
+   inout                    ps2_clk,
+   inout                    ps2_data
    );
 
-   //Active Low SW
-//   wire 	    clk;
-//   wire 	    reset_x;
+   wire [SOURCES-1:0]       src;    //Interrupt sources
 
+   wire [`ADDR_LEN-1:0]     pc;
+   wire [`ADDR_LEN-1:0]     cpu_res_pc;
+   wire [4*`INSN_LEN-1:0]   idata;   
 
-   wire [`ADDR_LEN-1:0] pc;
-   wire [4*`INSN_LEN-1:0] idata;
-   wire [8:0] 		  imem_addr;
-   wire [`DATA_LEN-1:0]   dmem_data;
-   wire [`DATA_LEN-1:0]   dmem_wdata;
-   wire [`ADDR_LEN-1:0]   dmem_addr;
-   wire 		  dmem_we;
-   wire [`DATA_LEN-1:0]   dmem_wdata_core;
-   wire [`ADDR_LEN-1:0]   dmem_addr_core;
-   wire 		  dmem_we_core;
+   wire                     icache_req;
+   wire                     kill_icache_req;
+   wire [1:0]               icache_done;
+   wire                     icache_busy;
 
-   wire 		  utx_we;
-   wire 		  finish_we;
-   wire 		  ready_tx;
-   wire 		  loaded;
-   
-   reg 			  prog_loading;
-   wire [4*`INSN_LEN-1:0] prog_loaddata = 0;
-   wire [`ADDR_LEN-1:0]   prog_loadaddr = 0;
-   wire 		  prog_dmem_we = 0;
-   wire 		  prog_imem_we = 0;
-/*   
-   assign utx_we = (dmem_we_core && (dmem_addr_core == 32'h0)) ? 1'b1 : 1'b0;
-   assign finish_we = (dmem_we_core && (dmem_addr_core == 32'h8)) ? 1'b1 : 1'b0;
-   
+   wire                     avm_i_read;
+   wire [31:0]              avm_i_address;
+   wire [127:0]             avm_i_readdata;
+   wire                     avm_i_readdatavalid;
+
+   wire                     avm_d_read;
+   wire                     avm_d_write;   
+   wire [31:0]              avm_d_address;
+   wire [127:0]             avm_d_readdata;
+   wire [127:0]             avm_d_readdata_plic;
+   wire [127:0]             avm_d_readdata_keyboard;
+   wire [127:0]             avm_d_writedata;   
+   wire                     avm_d_readdatavalid;
+
+   wire [1:0]               imem_we;
+   wire [`ADDR_LEN-1:0]     imem_addr;
+   wire [4*`INSN_LEN-1:0]   imem_data;
+   wire                     imem_done;
+
+   wire [1:0]               dmem_we;
+   wire [`ADDR_LEN-1:0]     dmem_addr;
+   wire [15:0]              dmem_byteenable;
+   wire [4*`DATA_LEN-1:0]   dmem_wdata;
+   wire [4*`DATA_LEN-1:0]   dmem_data;
+   wire                     dmem_done;
+
+   reg  [1:0]               rw_flag_;
+   reg                      prog_loading;
+
+   wire [TARGETS-1:0]       irq;
+   reg                      plic_reg_done;
+
+   assign src[5:0] = 6'b000000;
+
    always @ (posedge clk) begin
       if (!reset_x) begin
-	 LED <= 0;
-      end else if (utx_we) begin
-	 LED <= {LED[7], dmem_wdata[6:0]};
-      end else if (finish_we) begin
-	 LED <= {1'b1, LED[6:0]};
-      end
-   end
-*/
-   always @ (posedge clk) begin
-      if (!reset_x) begin
-	 prog_loading <= 1'b1;
+	    prog_loading <= 1'b1;
+        rw_flag_ <= 0;
       end else begin
-	 prog_loading <= 0;
+	    prog_loading <= 0;
+        rw_flag_ <= 1;
       end
    end
-/*   
-   GEN_MMCM_DS genmmcmds
-     (
-      .CLK_P(CLK_P), 
-      .CLK_N(CLK_N), 
-      .RST_X_I(~RST_X_IN), 
-      .CLK_O(clk), 
-      .RST_X_O(reset_x)
-      );
-*/
+
    pipeline pipe
      (
       .clk(clk),
       .reset(~reset_x | prog_loading),
+      .icache_req(icache_req),
+      .kill_icache_req(kill_icache_req),
       .pc(pc),
+      .cpu_res_pc(cpu_res_pc),
       .idata(idata),
-      .dmem_wdata(dmem_wdata_core),
-      .dmem_addr(dmem_addr_core),
-      .dmem_we(dmem_we_core),
-      .dmem_data(dmem_data)
-      );
 
-   assign dmem_addr = prog_loading ? prog_loadaddr : dmem_addr_core;
-   assign dmem_we = prog_loading ? prog_dmem_we : dmem_we_core;
-   assign dmem_wdata = prog_loading ? prog_loaddata[127:96] : dmem_wdata_core;
+      .dmem_we(dmem_we),
+      .dmem_addr(dmem_addr),
+      .dmem_byteenable(dmem_byteenable),
+      .dmem_wdata(dmem_wdata),
+      .dmem_data(dmem_data),
+      .dmem_done(dmem_done),
+
+      .icache_done(icache_done[0]),
+      .icache_busy(icache_busy),
+
+      .irq(irq)
+      ); 
+
+   avalon_sdr sdr_d(
+      .clk(clk),
+      .reset(~reset_x),
+      .avm_m0_write(avm_d_write),
+      .avm_m0_writedata(avm_d_writedata),
+      .avm_m0_read(avm_d_read),
+      .avm_m0_address(avm_d_address),
+      .avm_m0_readdata(~dmem_addr[30] ? avm_d_readdata :
+                        dmem_addr[9:8] == 2'b00 ? avm_d_readdata_plic : avm_d_readdata_keyboard),
+      .avm_m0_readdatavalid(avm_d_readdatavalid | plic_reg_done),
+      .avm_m0_waitrequest(1'b0),
+      .mem_req_rw(dmem_we),
+      .maddr(dmem_addr),
+      .byteenable(dmem_byteenable),
+      .write_data(dmem_wdata),
+      .read_data(dmem_data),
+      .mem_done(dmem_done)
+            );
+
    dmem datamemory(
 		   .clk(clk),
-		   .addr({2'b0, dmem_addr[`ADDR_LEN-1:2]}),
-		   .wdata(dmem_wdata),
-		   .we(dmem_we),
-		   .rdata(dmem_data)
+		   .addr(avm_d_address),
+		   .wdata(avm_d_writedata),
+		   .we(dmem_addr[30] ? 2'h0 : {avm_d_write, avm_d_read}),
+		   .rdata(avm_d_readdata),
+           .done(avm_d_readdatavalid)
 		   );
 
-   assign imem_addr = prog_loading ? prog_loadaddr[12:4] : pc[12:4];
-   imem_ld instmemory(
-		      .clk(~clk),
-		      .addr(imem_addr),
-		      .rdata(idata),
-		      .wdata(prog_loaddata),
-		      .we(prog_imem_we)
-		      );
-/*   
-   SingleUartTx sutx
-     (
-      .CLK(clk),
-      .RST_X(reset_x),
-      .TXD(TXD),
-      .ERR(),
-      .DT01(dmem_wdata[7:0]),
-      .WE01(utx_we)
-      );
+  apb4_plic_top #(
+    //PLIC Parameters
+    .SOURCES           ( SOURCES ),
+    .TARGETS           ( TARGETS ),
+    .PRIORITIES        ( PRIORITIES ),
+    .MAX_PENDING_COUNT ( MAX_PENDING_COUNT ),
+    .HAS_THRESHOLD     ( HAS_THRESHOLD ),
+    .HAS_CONFIG_REG    ( HAS_CONFIG_REG )
+  )
+  plic (
+    .rst_n    ( reset_x         ), //Active low asynchronous reset
+    .clk      ( clk             ), //System clock
 
-   PLOADER loader
-     (
-      .CLK(clk),
-      .RST_X(reset_x),
-      .RXD(RXD),
-      .ADDR(prog_loadaddr),
-      .DATA(prog_loaddata),
-      .WE_32(prog_dmem_we),
-      .WE_128(prog_imem_we),
-      .DONE(loaded)
+    .we       ( (dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b00) ? avm_d_write : 1'b0 ), //write cycle
+    .re       ( (dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b00) ? avm_d_read  : 1'b0 ), //read cycle
+    .PADDR    ( {24'h0, avm_d_address[7:0]}        ), //address
+    .PSTRB    ( 4'b1111                            ), //PSTRB=byte-enables
+    .PWDATA   ( avm_d_writedata                    ), //write data
+    .PRDATA   ( avm_d_readdata_plic                ), //read data
+
+    .src      ( src                                ), //Interrupt sources
+    .irq      ( irq                                )  //Interrupt Requests
+ );
+
+   always @ (posedge clk) begin
+      plic_reg_done <= 0;
+      if (dmem_addr[30] && (avm_d_write || avm_d_read)) begin
+         plic_reg_done <= 1;
+      end
+   end
+
+   soc_system qsys(
+       .clk_clk(clk),
+       .reset_reset_n(reset_x),
+       .ps2_0_avalon_ps2_slave_address(avm_d_address[2]),
+       .ps2_0_avalon_ps2_slave_chipselect(dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10),
+       .ps2_0_avalon_ps2_slave_byteenable(4'b0001),
+       .ps2_0_avalon_ps2_slave_read((dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10) ? avm_d_read  : 1'b0),
+       .ps2_0_avalon_ps2_slave_write((dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10) ? avm_d_write : 1'b0),
+       .ps2_0_avalon_ps2_slave_writedata(avm_d_writedata),
+       .ps2_0_avalon_ps2_slave_readdata(avm_d_readdata_keyboard),
+       //.ps2_0_avalon_ps2_slave_waitrequest(),
+       .ps2_0_external_interface_CLK(ps2_clk),
+       .ps2_0_external_interface_DAT(ps2_data),
+       .ps2_0_interrupt_irq(src[6])
+   );
+
+/*
+   cache icache(
+            .CLK(clk),
+            .RST(~reset_x),
+            .rw_flag_(rw_flag_),
+            .addr_(pc),
+            .read_data(idata),
+            .busy(icache_busy),
+            .done(icache_done),
+            .mem_rw_flag(imem_we),
+            .mem_addr(imem_addr),
+            .mem_read_data(imem_data),
+            .mem_done(imem_done)
+      );*/
+
+   //dm_cache_fsm icache(
+   dm_cache_pl icache(
+        .clk(clk),
+        .rst(~reset_x), 
+        .cpu_req_addr(pc),
+        .cpu_req_data(32'h0),
+        .cpu_req_funct3(3'b010),
+        .cpu_req_rw(1'b0),
+        .cpu_req_valid(rw_flag_[0] & icache_req),
+        .cpu_req_kill(kill_icache_req),
+
+        .mem_data_data(imem_data),
+        .mem_data_ready(imem_done),
+
+        .mem_req_addr(imem_addr),
+        .mem_req_rw(imem_we),
+        //.mem_req_valid
+
+        .cpu_res_pc(cpu_res_pc),
+        .cpu_res_data(idata),
+        .cpu_res_ready(icache_done),
+        .busy(icache_busy)
+   );
+ 
+   avalon_sdr sdr_i(
+      .clk(clk),
+      .reset(~reset_x),
+      .avm_m0_read(avm_i_read),
+      .avm_m0_address(avm_i_address),
+      .avm_m0_readdata(avm_i_readdata),
+      .avm_m0_readdatavalid(avm_i_readdatavalid),
+      .avm_m0_waitrequest(1'b0),
+      .mem_req_rw(imem_we),
+      .maddr(imem_addr),
+      .byteenable(16'hFFFF),
+      .read_data(imem_data),
+      .mem_done(imem_done)
       );
-*/   
+   imem_ld instmemory(
+		      .clk(clk),
+		      .addr(avm_i_address[12:4]),
+		      .rdata(avm_i_readdata),
+		      .we({1'b0, avm_i_read}),
+		      .done(avm_i_readdatavalid)
+		      );
 endmodule // top
 
    
