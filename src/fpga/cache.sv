@@ -4,10 +4,9 @@ module dm_cache_data_pl(
         input   logic               clk,
 		input   cache_req_type      data_req1,      //data request/command, e.g. RW, valid
 		input   cache_req_type      data_req2,      //
-		input   cache_data_type     data_write1,    //write port(128-bit line)
-		input   cache_data_type     data_write2,    //
-		output  cache_data_type     data_read1,     //read port
-		output  cache_data_type     data_read2); 	//
+		input   logic [127:0]       data_write2,    //write port(128-bit line)
+		output  logic [127:0]       data_read1      //read port
+		); 	//
 /*		input  logic [8:0]			index,
 		input  logic 				we,
 		input  logic [127:0]		data_write,
@@ -15,7 +14,7 @@ module dm_cache_data_pl(
 
 	//timeunit 1ns; timeprecision 1ps;
 
-	cache_data_type data_mem[0:511];
+	reg [127:0] data_mem[0:511];
 
 /*	initial begin
 		for (int i=0; i<512; i++)
@@ -27,27 +26,16 @@ module dm_cache_data_pl(
 	always_ff @(posedge(clk)) begin
 
         if (data_req1.en) begin
-            if (data_req1.we) begin
-                data_read1 <= data_write1;
-		        data_mem[data_req1.index] <= data_write1;
-            end
-            else begin
-                if (data_req2.en && data_req2.we && data_req1.index == data_req2.index)
-                    data_read1 <= data_write2;
-                else
-                    data_read1 <= data_mem[data_req1.index];
-            end
+            if (data_req2.en && data_req1.index == data_req2.index)
+                data_read1 <= data_write2;
+            else
+                data_read1 <= data_mem[data_req1.index];
         end 
         else data_read1 <= 'z;
 
         if (data_req2.en) begin
-            if (data_req2.we) begin
-                data_read2 <= data_write2;
-		        data_mem[data_req2.index] <= data_write2;
-            end
-            else data_read2 <= data_mem[data_req2.index];
-        end 
-        else data_read2 <= 'z;
+            data_mem[data_req2.index] <= data_write2;
+        end
 	end
 endmodule
 
@@ -57,10 +45,9 @@ module dm_cache_tag_pl(
         input   logic               rst,
 		input   cache_req_type      tag_req1,		//tag request/command, e.g. RW, valid
 		input   cache_req_type      tag_req2,		//
-		input   cache_tag_type      tag_write1,		//write port
-		input   cache_tag_type      tag_write2,		//
-		output  cache_tag_type      tag_read1,  	//read port*/
-		output  cache_tag_type      tag_read2);	    //
+		input   cache_tag_type      tag_write2,		//write port
+		output  cache_tag_type      tag_read1  	    //read port
+		);
 /*		input  logic [8:0]				index,
 		input  logic 					we,
 		input  logic 					tag_write_valid,
@@ -72,9 +59,6 @@ module dm_cache_tag_pl(
 
 	//timeunit 1ns; timeprecision 1ps;
 
-	logic tag_mem_valid[0:511];
-	logic tag_mem_dirty[0:511];
-	logic [TAGMSB:TAGLSB] tag_mem[0:511];
 
 	initial begin
 		for (int i=0; i<512; i++) begin
@@ -82,40 +66,46 @@ module dm_cache_tag_pl(
 		  tag_mem_dirty[i] = '0;
 		  tag_mem[i] = '0;
 		end
-	end*/
+	end
+*/
 
-    cache_tag_type tag_mem[0:511];
+	logic tag_mem_valid[0:511];
+	logic tag_mem_dirty[0:511];
+	logic [TAGMSB:TAGLSB] tag_mem[0:511];
+    // cache_tag_type tag_mem[0:511];
 
     integer i;
 	always_ff @(posedge(clk)) begin
         if (rst) begin
 		    for (int i=0; i<512; i++) begin
-		        tag_mem[i] <= '0;
+		        tag_mem_valid[i] <= '0;
+                // tag_mem[i] <= '0;
 		    end
         end
+        else begin
 
-        if (tag_req1.en) begin
-		    if (tag_req1.we) begin
-		        tag_mem[tag_req1.index] <= tag_write1;
-	            tag_read1 <= tag_write1;
+            tag_read1.valid <= tag_mem_valid[tag_req1.index];
+            tag_read1.dirty <= tag_mem_dirty[tag_req1.index];
+            tag_read1.tag <= tag_mem[tag_req1.index];
+            if (tag_req2.en) begin
+                tag_mem_valid[tag_req2.index] <= tag_write2.valid;
+                tag_mem_dirty[tag_req2.index] <= tag_write2.dirty;
+                tag_mem[tag_req2.index] <= tag_write2.tag;
             end
-            else begin
-                if (tag_req2.en && tag_req2.we && tag_req1.index == tag_req2.index)
+/*
+            if (tag_req1.en) begin
+                if (tag_req2.en && tag_req1.index == tag_req2.index)
                     tag_read1 <= tag_write2;
                 else
                     tag_read1 <= tag_mem[tag_req1.index];
             end
-        end
-        else tag_read1 <= 'z;
+            else tag_read1 <= 'z;
 
-        if (tag_req2.en) begin
-		    if (tag_req2.we) begin
-		        tag_mem[tag_req2.index] <= tag_write2;
-	            tag_read2 <= tag_write2;
+            if (tag_req2.en) begin
+                tag_mem[tag_req2.index] <= tag_write2;
             end
-            else tag_read2 <= tag_mem[tag_req2.index];
+*/
         end
-        else tag_read2 <= 'z;
 	end
 endmodule
 
@@ -178,12 +168,12 @@ module dm_cache_pl(input logic clk, input logic rst,
 
 	/*interface signals to cache data memory*/
 
-	cache_data_type data_read1;					//cache line read data
-	cache_data_type data_write1;				//cache line write data
+	logic [127:0] data_read1;					//cache line read data
+	logic [127:0] data_write1;				    //cache line write data
 	cache_req_type  data_req1;					//data req
 
-	cache_data_type data_read2;					//cache line read data
-	cache_data_type data_write2;				//cache line write data
+	logic [127:0] data_read2;					//cache line read data
+	logic [127:0] data_write2;				    //cache line write data
 	cache_req_type  data_req2;					//data req
 
 	/*temporary variable for cache controller result*/
@@ -195,7 +185,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 /*	assign mem_req = v_mem_req;					//connect to output ports
 	assign cpu_res = v_cpu_res;*/
 
-    assign busy = cache_miss | (|mem_access);
+    assign busy = cache_miss | (|mem_access) | tag_req2.en;
 
 	assign mem_req_addr = v_mem_req.addr;
 	assign mem_req_data = v_mem_req.data;
@@ -281,7 +271,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 
     endfunction : get_data_write
 
-    assign accept_req = cpu_req_valid && ~cpu_req_kill && ((|v_cpu_res.ready) || ~busy);
+    assign accept_req = cpu_req_valid && ~cpu_req_kill; //&& ((|v_cpu_res.ready) || ~busy);
 
 	always_ff @(posedge(clk)) begin
         if (rst) begin
@@ -351,6 +341,8 @@ module dm_cache_pl(input logic clk, input logic rst,
 
         // enable tag1, data1 access if have cache req
         // if (~mem_access && ~cpu_req_kill && cpu_req_valid) begin
+        // bram不支持读优先(读写同时发生，读出写入的数据)
+        // 所以有写发生的时候不能读
         if (accept_req) begin
 		    tag_req1.en = 1'b1;
 		    data_req1.en = 1'b1;
@@ -474,21 +466,27 @@ module dm_cache_pl(input logic clk, input logic rst,
         .rst                (rst),
 		.tag_req1           (tag_req1),
 		.tag_req2           (tag_req2),
-		.tag_write1         (tag_write1),
 		.tag_write2         (tag_write2),
-		.tag_read1          (tag_read1),
-		.tag_read2          (tag_read2)
+		.tag_read1          (tag_read1)
 		);
+
+    ram_sync_1r1w #(9, 128, 512) cdata(
+		.clk            (clk),
+        .raddr1         (data_req1.index),
+        .rdata1         (data_read1),
+        .waddr          (data_req2.index),
+        .wdata          (data_write2),
+        .we             (data_req2.en)
+		);
+/*
 	dm_cache_data_pl cdata(
 		.clk            (clk),
 		.data_req1      (data_req1),
 		.data_req2      (data_req2),
-		.data_write1    (data_write1),
 		.data_write2    (data_write2),
-		.data_read1     (data_read1),
-		.data_read2     (data_read2)
+		.data_read1     (data_read1)
 		);
-
+*/
 
 /*
 	dm_cache_tag ctag(

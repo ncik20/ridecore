@@ -594,8 +594,8 @@ module pipeline
    // idata_ok与新req要区分开？
    // assign idata_ok = icache_done & icache_busy;
    
-   assign icache_req_ok = icache_done | ~icache_busy;
-   assign dcache_req_ok = (|cpu_res_ready) | ~dcache_busy;
+   assign icache_req_ok = ~icache_busy;
+   assign dcache_req_ok = ~dcache_busy;
 
    // assign ddata_ok = cpu_res_ready && dcache_busy;
 

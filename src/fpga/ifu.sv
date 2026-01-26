@@ -40,11 +40,7 @@ module instruction_fetch
     // output wire [`FTQ_SEL-1:0]      prmiss_ftq_idx
    );
 
-    reg  [`INSN_LEN-1:0]    mem0[0:`IBUF_NUM-1];
-    reg  [`INSN_LEN-1:0]    mem1[0:`IBUF_NUM-1];
-    reg  [`INSN_LEN-1:0]    mem2[0:`IBUF_NUM-1];
-    reg  [`INSN_LEN-1:0]    mem3[0:`IBUF_NUM-1];
-
+    reg  [`INSN_LEN*4-1:0]  mem[0:`IBUF_NUM-1];
     reg  [`ADDR_LEN-1:0]    buf_pc[0:`IBUF_NUM-1];
     reg  [`ADDR_LEN-1:0]    buf_npc[0:`IBUF_NUM-1];
     reg  [`IBUF_NUM-1:0]    buf_prcond;
@@ -52,24 +48,22 @@ module instruction_fetch
     reg  [11:0]             buf_instype[0:`IBUF_NUM-1];
 
     reg  [3:0]              valid[0:`IBUF_NUM-1];
+    reg  [3:0]              valid_rdPtr_next;
+    reg  [3:0]              valid_rdPtr1_next;
     reg  [`IBUF_NUM-1:0]    used;
-    wire [`IBUF_NUM-1:0]    used_next;
+    reg  [`IBUF_NUM-1:0]    used_next;
 
     reg  [3:0]              read_mask1;
     reg  [3:0]              read_mask2;
 
-    reg  [`IBUF_SEL-1:0]    readPtr;
+    reg  [`IBUF_SEL-1:0]    rdPtr;
+    wire [`IBUF_SEL-1:0]    rdPtr1;
+    reg  [`IBUF_SEL-1:0]    rdPtr_next;
     reg  [`IBUF_SEL-1:0]    wr_iBufPtr;
     reg  [`IBUF_SEL-1:0]    wr_iBufdataPtr;
-    reg  [`IBUF_SEL-1:0]    inst2_readPrt;
-    
-    reg  [1:0]              used_clear;
-    reg  [`IBUF_SEL-1:0]    readPtr_next;
-    reg  [3:0]              valid_readPtr;
-    reg  [3:0]              valid_readPtr_plus1;
+    reg  [`IBUF_SEL-1:0]    inst2_rdPrt;
 
-    wire [`IBUF_SEL-1:0]    readPtr_plus1;
-    wire [2:0]              readPtr_valid_cnt;
+    wire [2:0]              rdPtr_valid_cnt;
     wire                    valid0;
     wire                    valid1;
     wire                    valid2;
@@ -91,10 +85,10 @@ module instruction_fetch
 
     assign full = (used[wr_iBufPtr] == 1'b1);
 
-    assign readPtr_plus1 = readPtr + 1;
+    assign rdPtr1 = rdPtr + 1;
 
-    assign readPtr_valid_cnt = valid[readPtr][0] + valid[readPtr][1] +
-        valid[readPtr][2] + valid[readPtr][3];
+    assign rdPtr_valid_cnt = valid[rdPtr][0] + valid[rdPtr][1] +
+        valid[rdPtr][2] + valid[rdPtr][3];
 
     // assign stall = req_latch && ~icache_done;
     
@@ -155,15 +149,6 @@ module instruction_fetch
 
     assign instype = {instype3, instype2, instype1, instype0};
 
-    genvar m;
-	generate
-		for(m = 0; m < `IBUF_NUM; m = m + 1) begin: set_used_next
-            assign used_next[m] = ((m == readPtr && used_clear != 2'd0) ||
-                                   (m == readPtr_plus1 && used_clear == 2'd2)) ? 1'b0 :
-                                  (m == wr_iBufPtr && icache_req) ? 1'b1 : used[m];
-        end
-    endgenerate
-
     f_decode fdecode0(
         .opcode(idata[6-:7]),
         .rd(idata[11-:5]),
@@ -197,7 +182,7 @@ module instruction_fetch
         if (reset) begin
             wr_iBufPtr <= '0;
             wr_iBufdataPtr <= '0;
-            readPtr <= '0;
+            rdPtr <= '0;
 
             used <= '0;
 		    for (int i=0; i<`IBUF_NUM; i++) begin
@@ -206,10 +191,10 @@ module instruction_fetch
         end
         else begin
 
-            readPtr <= readPtr_next;
+            rdPtr <= rdPtr_next;
             used <= used_next;
-            valid[readPtr] <= valid_readPtr;
-            valid[readPtr_plus1] <= valid_readPtr_plus1;
+            valid[rdPtr] <= valid_rdPtr_next;
+            valid[rdPtr1] <= valid_rdPtr1_next;
 
             if (icache_req) begin
 
@@ -223,10 +208,7 @@ module instruction_fetch
 
             if (icache_done) begin
 
-                mem0[wr_iBufdataPtr] <= idata[31 -:32];
-                mem1[wr_iBufdataPtr] <= idata[63 -:32];
-                mem2[wr_iBufdataPtr] <= idata[95 -:32];
-                mem3[wr_iBufdataPtr] <= idata[127-:32];
+                mem[wr_iBufdataPtr] <= idata;
 
                 buf_instype[wr_iBufdataPtr] <= instype;
 
@@ -247,13 +229,13 @@ module instruction_fetch
         read_mask1 = '0;
         read_mask2 = '0;
 
-        used_clear = '0;
-        readPtr_next = readPtr;
+        used_next = used;
+        rdPtr_next = rdPtr;
 
-        valid_readPtr = valid[readPtr];
-        valid_readPtr_plus1 = valid[readPtr_plus1];
+        valid_rdPtr_next = valid[rdPtr];
+        valid_rdPtr1_next = valid[rdPtr1];
 
-        inst2_readPrt = readPtr;
+        inst2_rdPrt = rdPtr;
         sameLine = 1'b1;
 
         pc_offset1 = '0;
@@ -280,50 +262,53 @@ module instruction_fetch
         instype_line1 = '0;
         instype_line2 = '0;
 
+        if (icache_req)
+            used_next[wr_iBufPtr] = 1'b1;
+
         if (rdreq) begin
-            case(readPtr_valid_cnt)
+            case(rdPtr_valid_cnt)
                 3'd1:begin
                     invalid1 = '0;
                     invalid2 = '0;
-                    inst2_readPrt = readPtr_plus1;
+                    inst2_rdPrt = rdPtr1;
                     sameLine = '0;
 
-                    if (valid[readPtr][0]) begin
+                    if (valid[rdPtr][0]) begin
                         pc_offset1 = 4'd0;
-                        inst1 = mem0[readPtr];
+                        inst1 = mem[rdPtr][31-:32];
                         read_mask1 = 4'b0001;
                     end
-                    if (valid[readPtr][1]) begin
+                    if (valid[rdPtr][1]) begin
                         pc_offset1 = 4'd4;
-                        inst1 = mem1[readPtr];
+                        inst1 = mem[rdPtr][(31+32)-:32];
                         read_mask1 = 4'b0010;
                     end
-                    if (valid[readPtr][2]) begin
+                    if (valid[rdPtr][2]) begin
                         pc_offset1 = 4'd8;
-                        inst1 = mem2[readPtr];
+                        inst1 = mem[rdPtr][(31+32*2)-:32];
                         read_mask1 = 4'b0100;
                     end
-                    if (valid[readPtr][3]) begin
+                    if (valid[rdPtr][3]) begin
                         pc_offset1 = 4'd12;
-                        inst1 = mem3[readPtr];
+                        inst1 = mem[rdPtr][(31+32*3)-:32];
                         read_mask1 = 4'b1000;
                     end
 
-                    if (valid[readPtr_plus1][0]) begin
+                    if (valid[rdPtr1][0]) begin
                         pc_offset2 = 4'd0;
-                        inst2 = mem0[readPtr_plus1];
+                        inst2 = mem[rdPtr1][31-:32];
                         read_mask2 = 4'b0001;
-                    end else if (valid[readPtr_plus1][1]) begin
+                    end else if (valid[rdPtr1][1]) begin
                         pc_offset2 = 4'd4;
-                        inst2 = mem1[readPtr_plus1];
+                        inst2 = mem[rdPtr1][(31+32)-:32];
                         read_mask2 = 4'b0010;
-                    end else if (valid[readPtr_plus1][2]) begin
+                    end else if (valid[rdPtr1][2]) begin
                         pc_offset2 = 4'd8;
-                        inst2 = mem2[readPtr_plus1];
+                        inst2 = mem[rdPtr1][(31+32*2)-:32];
                         read_mask2 = 4'b0100;
-                    end else if (valid[readPtr_plus1][3]) begin
+                    end else if (valid[rdPtr1][3]) begin
                         pc_offset2 = 4'd12;
-                        inst2 = mem3[readPtr_plus1];
+                        inst2 = mem[rdPtr1][(31+32*3)-:32];
                         read_mask2 = 4'b1000;
                     end else
                         invalid2 = 1'b1;
@@ -332,66 +317,67 @@ module instruction_fetch
                     invalid1 = '0;
                     invalid2 = '0;
 
-                    if (valid[readPtr][0]) begin
+                    if (valid[rdPtr][0]) begin
                         pc_offset1 = 4'd0;
                         pc_offset2 = 4'd4;
-                        inst1 = mem0[readPtr];
-                        inst2 = mem1[readPtr];
+                        inst1 = mem[rdPtr][31-:32];
+                        inst2 = mem[rdPtr][(31+32)-:32];
                         read_mask1 = 4'b0011;
-                    end else if (valid[readPtr][1]) begin
+                    end else if (valid[rdPtr][1]) begin
                         pc_offset1 = 4'd4;
                         pc_offset2 = 4'd8;
-                        inst1 = mem1[readPtr];
-                        inst2 = mem2[readPtr];
+                        inst1 = mem[rdPtr][(31+32)-:32];
+                        inst2 = mem[rdPtr][(31+32*2)-:32];
                         read_mask1 = 4'b0110;
-                    end else if (valid[readPtr][2]) begin
+                    end else if (valid[rdPtr][2]) begin
                         pc_offset1 = 4'd8;
                         pc_offset2 = 4'd12;
-                        inst1 = mem2[readPtr];
-                        inst2 = mem3[readPtr];
+                        inst1 = mem[rdPtr][(31+32*2)-:32];
+                        inst2 = mem[rdPtr][(31+32*3)-:32];
                         read_mask1 = 4'b1100;
                     end
                 end
             endcase
 
-            pc1 = {buf_pc[readPtr][`ADDR_LEN-1:4], 4'b0000} + pc_offset1;
-            npc1 = buf_npc[readPtr];
-            prcond1 = buf_prcond[readPtr];
-            bhr1 = buf_bhr[readPtr];
-            instype_line1 = buf_instype[readPtr];
+            pc1 = {buf_pc[rdPtr][`ADDR_LEN-1:4], 4'b0000} + pc_offset1;
+            npc1 = buf_npc[rdPtr];
+            prcond1 = buf_prcond[rdPtr];
+            bhr1 = buf_bhr[rdPtr];
+            instype_line1 = buf_instype[rdPtr];
 
-            pc2 = {buf_pc[inst2_readPrt][`ADDR_LEN-1:4], 4'b0000} + pc_offset2;
-            npc2 = buf_npc[inst2_readPrt];
-            prcond2 = buf_prcond[inst2_readPrt];
-            bhr2 = buf_bhr[inst2_readPrt];
-            instype_line2 = buf_instype[inst2_readPrt];
+            pc2 = {buf_pc[inst2_rdPrt][`ADDR_LEN-1:4], 4'b0000} + pc_offset2;
+            npc2 = buf_npc[inst2_rdPrt];
+            prcond2 = buf_prcond[inst2_rdPrt];
+            bhr2 = buf_bhr[inst2_rdPrt];
+            instype_line2 = buf_instype[inst2_rdPrt];
 
             if (read_mask2 != 4'b0000) begin
-                if (valid[readPtr_plus1] == 4'b0001 || 
-                    valid[readPtr_plus1] == 4'b0010 || 
-                    valid[readPtr_plus1] == 4'b0100 || 
-                    valid[readPtr_plus1] == 4'b1000)
+                if (valid[rdPtr1] == 4'b0001 || 
+                    valid[rdPtr1] == 4'b0010 || 
+                    valid[rdPtr1] == 4'b0100 || 
+                    valid[rdPtr1] == 4'b1000)
                 begin
-                    used_clear = 2'd2;
-                    readPtr_next = readPtr + 2;
+                    used_next[rdPtr] = '0;
+                    used_next[rdPtr1] = '0;
+                    rdPtr_next = rdPtr + 2;
                 end
                 else begin
-                    used_clear = 2'd1;
-                    readPtr_next = readPtr + 1;
+                    used_next[rdPtr] = '0;
+                    rdPtr_next = rdPtr + 1;
                 end
             end
             else if (read_mask1 != 4'b0000 &&
-                (readPtr_valid_cnt == 3'd1 || readPtr_valid_cnt == 3'd2))
+                (rdPtr_valid_cnt == 3'd1 || rdPtr_valid_cnt == 3'd2))
             begin
-                used_clear = 2'd1;
-                readPtr_next = readPtr + 1;
+                used_next[rdPtr] = '0;
+                rdPtr_next = rdPtr + 1;
             end
             
             if (read_mask1 != 4'b0000)
-                valid_readPtr = valid_readPtr ^ read_mask1;
+                valid_rdPtr_next = valid_rdPtr_next ^ read_mask1;
 
             if (read_mask2 != 4'b0000)
-                valid_readPtr_plus1 = valid_readPtr_plus1 ^ read_mask2;
+                valid_rdPtr1_next = valid_rdPtr1_next ^ read_mask2;
         end
     end
 endmodule

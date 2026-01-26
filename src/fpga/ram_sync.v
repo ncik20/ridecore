@@ -17,11 +17,11 @@ module ram_sync_1r1w #(
    reg [BRAM_DATA_WIDTH-1:0] 			      mem [0:DATA_DEPTH-1];
 
    always @ (posedge clk) begin
-   /*
+
       rdata1 <= mem[raddr1];
       if (we)
 	mem[waddr] <= wdata;
-	*/
+/*
       if (we)
 	    begin
 		  mem[waddr] <= wdata;
@@ -30,6 +30,7 @@ module ram_sync_1r1w #(
 	    end
 	  else
 	    rdata1 <= mem[raddr1];
+*/
    end
 endmodule // ram_sync_1r1w
 
