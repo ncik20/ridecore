@@ -139,8 +139,6 @@ module dm_cache_pl(input logic clk, input logic rst,
     //reg [31:0]  pending_req_addr;
     //wire rw_flag = busy ? pending_rw_flag : cpu_req_rw;
     //wire [31:0] req_addr = busy ? pending_req_addr : cpu_req_addr;
-    logic               io_write_byteenable;
-
     logic               icache_done_at_stage2;
     logic               icache_done_at_stage3;
 
@@ -156,6 +154,11 @@ module dm_cache_pl(input logic clk, input logic rst,
     logic               req_rw_stage1;
     logic               req_valid_stage1;
 
+    logic               r_from_w;
+    cache_tag_type      tag_read;
+    cache_tag_type      tag_read_;
+    logic [127:0]       data_read;
+    logic [127:0]       data_read_;
 
 	/*interface signals to tag memory*/
 	cache_tag_type  tag_read1;					//tag read result
@@ -185,7 +188,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 /*	assign mem_req = v_mem_req;					//connect to output ports
 	assign cpu_res = v_cpu_res;*/
 
-    assign busy = cache_miss | (|mem_access) | tag_req2.en;
+    assign busy = cache_miss | (|mem_access);
 
 	assign mem_req_addr = v_mem_req.addr;
 	assign mem_req_data = v_mem_req.data;
@@ -195,9 +198,6 @@ module dm_cache_pl(input logic clk, input logic rst,
 
 	assign cpu_res_data = v_cpu_res.data;
 	assign cpu_res_ready = v_cpu_res.ready;
-
-    assign io_write_byteenable = (cpu_req_funct3 == 3'b000) ? 16'h0001 :
-        (cpu_req_funct3 == 3'b001) ? 16'h0003 : 16'h000F;
 
     function automatic [31:0] store_b;
         input [1:0]     addr;
@@ -322,6 +322,16 @@ module dm_cache_pl(input logic clk, input logic rst,
                 end
             end
             else if (cache_miss) mem_access <= v_mem_req.rw;
+
+            // 读写同时发生的时候，如果读写的位置一致，则缓存写的内容，在下个
+            // 周期以此代替读出的内容
+            if (tag_req1.en && tag_req2.en && tag_req1.index == tag_req2.index) begin
+                r_from_w <= 1'b1;
+                tag_read_ <= tag_write2;
+                data_read_ <= data_write2;
+            end
+            else
+                r_from_w <= '0;
         end
 	end
 
@@ -357,6 +367,9 @@ module dm_cache_pl(input logic clk, input logic rst,
 
         cache_miss = '0;
 
+        tag_read = r_from_w ? tag_read_ : tag_read1;
+        data_read = r_from_w ? data_read_ : data_read1;
+
 		tag_req2.we = 1'b1;
 		tag_req2.index = req_addr_stage1[12:4];
         tag_req2.en = '0;
@@ -373,16 +386,16 @@ module dm_cache_pl(input logic clk, input logic rst,
 
 	    /*modify correct word(32-bit) based on address*/
 		data_write2 = get_data_write(req_addr_stage1[3:0], req_funct3_stage1,
-            req_data_stage1, data_read1);
+            req_data_stage1, data_read);
 
         cpu_res_pc = req_addr_stage1;
-        v_cpu_res.data = data_read1;
+        v_cpu_res.data = data_read;
         v_cpu_res.ready = '0;
 
 		/*memory request address(sampled from CPU request)*/
 		v_mem_req.addr = req_addr_stage1;
 		/*memory request data(used in write)*/
-		v_mem_req.data = data_read1;
+		v_mem_req.data = data_read;
         v_mem_req.byteenable = 16'hFFFF;
 		v_mem_req.rw = '0;
 		v_mem_req.valid = '0;
@@ -390,7 +403,7 @@ module dm_cache_pl(input logic clk, input logic rst,
         // if (~mem_access && ~cpu_req_kill && req_valid_stage1) begin
         if (~|mem_access && ~cpu_req_kill && req_valid_stage1) begin
 		    /*cache hit (tag match and cache entry is valid)*/
-		    if (req_addr_stage1[TAGMSB:TAGLSB] == tag_read1.tag && tag_read1.valid) begin
+		    if (req_addr_stage1[TAGMSB:TAGLSB] == tag_read.tag && tag_read.valid) begin
 			    /*write hit*/
 			    if (req_rw_stage1) begin
 				    /*read/modify cache line*/
@@ -409,14 +422,14 @@ module dm_cache_pl(input logic clk, input logic rst,
 	            cache_miss = 1'b1;
 
 				/*compulsory miss or miss with clean block*/
-	            if (tag_read1.valid == 1'b0 || tag_read1.dirty == 1'b0) begin
+	            if (tag_read.valid == 1'b0 || tag_read.dirty == 1'b0) begin
 	                v_mem_req.rw = 2'd1;
 	            end
 	            //tag_read.valid == 1'b1 && tag_read.dirty == 1'b1
 				/*miss with dirty line*/
 	            else begin
 					/*write back address*/
-					v_mem_req.addr = {tag_read1.tag, req_addr_stage1[TAGLSB-1:0]};
+					v_mem_req.addr = {tag_read.tag, req_addr_stage1[TAGLSB-1:0]};
 		            /*memory request data(used in write)*/
 					v_mem_req.rw = 2'd2;
 				end

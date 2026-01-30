@@ -100,7 +100,7 @@ module storebuf
    // 如果不加，执行了stretire，但prmiss了，retptr就不会在下个cycle变成retptr + 1
    // 以上是针对原始ridecore的做法的注释
    // assign stretire = valid[retptr] && completed[retptr] && ~memoccupy_ld && ~(dmem_w_done[1]) && ~prmiss;
-   assign stretire = valid[retptr] && completed[retptr] && stretire_en && ~prmiss;
+   assign stretire = valid[retptr] && completed[retptr] && ~prmiss;
    assign sb_full = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
    assign finptr_next = (~notfull_next | ~notempty_next) ? finptr :
 			(((nb1 == 0) && (ne1 == `STBUF_ENT_NUM-1)) ? nb0 : (ne1+1));
@@ -188,7 +188,7 @@ module storebuf
      // 是不是就会再申请一次写入？
      // 好像是的
 	 // if (dmem_w_done[1]) begin
-	 if (stretire) begin
+	 if (stretire && stretire_en) begin
 	    retptr <= retptr + 1;
 	    valid[retptr] <= 1'b0;
 	    completed[retptr] <= 1'b0;

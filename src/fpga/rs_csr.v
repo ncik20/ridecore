@@ -234,8 +234,13 @@ module rs_csr
           csr_excute <= 1'b1;
 
           if (|busyvec) begin
-              csr_spectag <= rrftag;
-              csr_specbit <= spectag;
+              // 下面这个是什么鬼？
+              // csr_spectag <= rrftag;
+              // csr_specbit <= spectag;
+              // 上面这个是什么鬼？
+
+              csr_spectag <= spectag;
+              csr_specbit <= specbitvec[issueaddr];
 
               if (issueaddr == 0) ready_0_ <= 1'b1;
               else ready_1_ <= 1'b1;

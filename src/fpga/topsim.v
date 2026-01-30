@@ -35,13 +35,20 @@ module top #(
    wire                     avm_i_readdatavalid;
 
    wire                     avm_d_read;
-   wire                     avm_d_write;   
+   wire                     avm_d_write;
    wire [31:0]              avm_d_address;
    wire [127:0]             avm_d_readdata;
-   wire [127:0]             avm_d_readdata_plic;
-   wire [127:0]             avm_d_readdata_keyboard;
-   wire [127:0]             avm_d_writedata;   
+   wire [127:0]             avm_d_writedata;
    wire                     avm_d_readdatavalid;
+
+   wire                     avm_io_read;
+   wire                     avm_io_write;
+   wire [31:0]              avm_io_address;
+   wire [127:0]             avm_io_readdata;
+   wire [127:0]             avm_io_readdata_plic;
+   wire [127:0]             avm_io_readdata_keyboard;
+   wire [127:0]             avm_io_writedata;
+   reg                      avm_io_readdatavalid;
 
    wire [1:0]               imem_we;
    wire [`ADDR_LEN-1:0]     imem_addr;
@@ -55,13 +62,20 @@ module top #(
    wire [4*`DATA_LEN-1:0]   dmem_data;
    wire                     dmem_done;
 
+   wire [1:0]               mmio_we;
+   wire [`ADDR_LEN-1:0]     mmio_addr;
+   wire [15:0]              mmio_byteenable;
+   wire [4*`DATA_LEN-1:0]   mmio_wdata;
+   wire [4*`DATA_LEN-1:0]   mmio_data;
+   wire                     mmio_done;
+
    reg  [1:0]               rw_flag_;
    reg                      prog_loading;
 
    wire [TARGETS-1:0]       irq;
-   reg                      plic_reg_done;
 
    assign src[5:0] = 6'b000000;
+   assign avm_io_readdata = (mmio_addr[9:8] == 2'b00) ? avm_io_readdata_plic : avm_io_readdata_keyboard;
 
    always @ (posedge clk) begin
       if (!reset_x) begin
@@ -90,11 +104,39 @@ module top #(
       .dmem_data(dmem_data),
       .dmem_done(dmem_done),
 
+      .mmio_we(mmio_we),
+      .mmio_addr(mmio_addr),
+      .mmio_byteenable(mmio_byteenable),
+      .mmio_wdata(mmio_wdata),
+      .mmio_data(mmio_data),
+      .mmio_done(mmio_done),
+
       .icache_done(icache_done[0]),
       .icache_busy(icache_busy),
 
       .irq(irq)
       ); 
+
+   avalon_sdr sdr_io(
+      .clk(clk),
+      .reset(~reset_x),      
+      .avm_m0_write(avm_io_write),
+      .avm_m0_writedata(avm_io_writedata),
+      .avm_m0_read(avm_io_read),
+      .avm_m0_address(avm_io_address),
+      .avm_m0_readdata(avm_io_readdata),
+      .avm_m0_readdatavalid(avm_io_readdatavalid),
+      // .avm_m0_byteenable(avm_io_byteenable),
+      // .avm_m0_waitrequest(avm_io_waitrequest),
+      .avm_m0_waitrequest(1'b0),
+      // .avm_m0_burstcount(avm_io_burstcount),
+      .mem_req_rw(mmio_we),
+      .maddr(mmio_addr),
+      .byteenable(mmio_byteenable),
+      .write_data(mmio_wdata),
+      .read_data(mmio_data),
+      .mem_done(mmio_done)
+            );
 
    avalon_sdr sdr_d(
       .clk(clk),
@@ -103,9 +145,8 @@ module top #(
       .avm_m0_writedata(avm_d_writedata),
       .avm_m0_read(avm_d_read),
       .avm_m0_address(avm_d_address),
-      .avm_m0_readdata(~dmem_addr[30] ? avm_d_readdata :
-                        dmem_addr[9:8] == 2'b00 ? avm_d_readdata_plic : avm_d_readdata_keyboard),
-      .avm_m0_readdatavalid(avm_d_readdatavalid | plic_reg_done),
+      .avm_m0_readdata(avm_d_readdata),
+      .avm_m0_readdatavalid(avm_d_readdatavalid),
       .avm_m0_waitrequest(1'b0),
       .mem_req_rw(dmem_we),
       .maddr(dmem_addr),
@@ -119,7 +160,7 @@ module top #(
 		   .clk(clk),
 		   .addr(avm_d_address),
 		   .wdata(avm_d_writedata),
-		   .we(dmem_addr[30] ? 2'h0 : {avm_d_write, avm_d_read}),
+		   .we({avm_d_write, avm_d_read}),
 		   .rdata(avm_d_readdata),
            .done(avm_d_readdatavalid)
 		   );
@@ -137,34 +178,35 @@ module top #(
     .rst_n    ( reset_x         ), //Active low asynchronous reset
     .clk      ( clk             ), //System clock
 
-    .we       ( (dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b00) ? avm_d_write : 1'b0 ), //write cycle
-    .re       ( (dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b00) ? avm_d_read  : 1'b0 ), //read cycle
-    .PADDR    ( {24'h0, avm_d_address[7:0]}        ), //address
+    .we       ( (avm_io_address[9:8] == 2'b00) ? avm_io_write : 1'b0 ), //write cycle
+    .re       ( (avm_io_address[9:8] == 2'b00) ? avm_io_read  : 1'b0 ), //read cycle
+    .PADDR    ( {24'h0, avm_io_address[7:0]}       ), //address
     .PSTRB    ( 4'b1111                            ), //PSTRB=byte-enables
-    .PWDATA   ( avm_d_writedata                    ), //write data
-    .PRDATA   ( avm_d_readdata_plic                ), //read data
+    .PWDATA   ( avm_io_writedata                   ), //write data
+    .PRDATA   ( avm_io_readdata_plic               ), //read data
 
     .src      ( src                                ), //Interrupt sources
     .irq      ( irq                                )  //Interrupt Requests
  );
 
    always @ (posedge clk) begin
-      plic_reg_done <= 0;
-      if (dmem_addr[30] && (avm_d_write || avm_d_read)) begin
-         plic_reg_done <= 1;
+      if (avm_io_write || avm_io_read) begin
+         avm_io_readdatavalid <= 1;
       end
+      else
+         avm_io_readdatavalid <= 0;
    end
 
    soc_system qsys(
        .clk_clk(clk),
        .reset_reset_n(reset_x),
-       .ps2_0_avalon_ps2_slave_address(avm_d_address[2]),
-       .ps2_0_avalon_ps2_slave_chipselect(dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10),
+       .ps2_0_avalon_ps2_slave_address(avm_io_address[2]),
+       .ps2_0_avalon_ps2_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[9:8] == 2'b10),
        .ps2_0_avalon_ps2_slave_byteenable(4'b0001),
-       .ps2_0_avalon_ps2_slave_read((dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10) ? avm_d_read  : 1'b0),
-       .ps2_0_avalon_ps2_slave_write((dmem_addr[30] == 1'b1 && dmem_addr[9:8] == 2'b10) ? avm_d_write : 1'b0),
-       .ps2_0_avalon_ps2_slave_writedata(avm_d_writedata),
-       .ps2_0_avalon_ps2_slave_readdata(avm_d_readdata_keyboard),
+       .ps2_0_avalon_ps2_slave_read(avm_io_read),
+       .ps2_0_avalon_ps2_slave_write(avm_io_write),
+       .ps2_0_avalon_ps2_slave_writedata(avm_io_writedata),
+       .ps2_0_avalon_ps2_slave_readdata(avm_io_readdata_keyboard),
        //.ps2_0_avalon_ps2_slave_waitrequest(),
        .ps2_0_external_interface_CLK(ps2_clk),
        .ps2_0_external_interface_DAT(ps2_data),

@@ -18,8 +18,15 @@ module pipeline
    output wire [`ADDR_LEN-1:0] 	    dmem_addr,
    output wire [15:0]               dmem_byteenable,
    output wire [4*`DATA_LEN-1:0]    dmem_wdata,
-   input wire  [4*`DATA_LEN-1:0] 	dmem_data,
-   input wire                       dmem_done,
+   input  wire [4*`DATA_LEN-1:0] 	dmem_data,
+   input  wire                      dmem_done,
+
+   output wire [1:0]			    mmio_we,
+   output wire [`ADDR_LEN-1:0] 	    mmio_addr,
+   output wire [15:0]               mmio_byteenable,
+   output wire [4*`DATA_LEN-1:0]    mmio_wdata,
+   input  wire [4*`DATA_LEN-1:0] 	mmio_data,
+   input  wire                      mmio_done,
 
    input wire                       icache_done,
    input wire                       icache_busy,
@@ -464,11 +471,11 @@ module pipeline
    wire [`ADDR_LEN-1:0]        ldaddr;
    wire [`DATA_LEN-1:0]        lddatasb;
    wire [`MEM_TYPE_WIDTH-1:0]  ldfunct3;
-   wire [`ADDR_LEN-1:0]        retaddr;
    wire [`DATA_LEN-1:0]        storedata;
    wire [`ADDR_LEN-1:0]        storeaddr;
    wire 		               stfin;
    wire                        stretire;
+   wire                        stretire_en;
    
    reg [`DATA_LEN-1:0] 	       buf_ex_src1_ldst;
    reg [`DATA_LEN-1:0] 	       buf_ex_src2_ldst;
@@ -556,36 +563,49 @@ module pipeline
    wire 		   brcond_combranch;
    wire 		   combranch;
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
-	
-    wire dcache_busy;
-    wire dcache_r_req;
-    wire dcache_w_req;
 
-    wire avm_m0_write;
-    wire avm_m0_read;
-    wire [1:0]cpu_res_ready;
-    wire [4*`DATA_LEN-1:0] cpu_res_data;
-    wire [`DATA_LEN-1:0] retdata;
-    wire [`MEM_TYPE_WIDTH-1:0] retfunct3;
-    
-    wire icache_req_ok;
-    wire dcache_req_ok;
-    // wire ddata_ok;
-    // reg  jmpaddr_is_latch;
-    reg  dcache_r_req_en;
+   wire [`ADDR_LEN-1:0]        retaddr;
+   // reg  [`ADDR_LEN-1:0]        retaddr_mmio_latch;
+   wire [`DATA_LEN-1:0]        retdata;
+   // reg  [`DATA_LEN-1:0]        retdata_mmio_latch;
+   wire [`MEM_TYPE_WIDTH-1:0]  retfunct3;
+   // reg  [`MEM_TYPE_WIDTH-1:0]  retfunct3_mmio_latch;
 
-    wire irq_flush;
-    wire [`ADDR_LEN-1:0]    mepc;
+    wire [1:0]                  cpu_res_ready;
+    wire [1:0]                  mmio_res_ready;
 
-    wire            mie;
+    wire [4*`DATA_LEN-1:0]      cpu_res_data;
+    wire [`DATA_LEN-1:0]        mmio_res_data;
+
+    wire                        icache_req_ok;
+    wire                        dcache_req_ok;
+    wire                        mmio_req_ok;
+
+    reg                         dcache_r_req_en;
+    wire                        dcache_w_req_en;
+    wire                        dcache_r_req;
+    wire                        dcache_w_req;
+    wire                        dcache_busy;
+
+    reg                         mmio_r_req_en;
+    wire                        mmio_w_req_en;
+    wire                        mmio_r_req;
+    wire                        mmio_w_req;
+    wire                        mmio_busy;
+
+    wire [`ADDR_LEN-1:0]        ldaddr_ex;
+
+    wire                        irq_flush;
+    wire [`ADDR_LEN-1:0]        mepc;
+    wire                        mie;
 	 
-	wire            system_ins1;
-	wire            system_ins_priv1;
+	wire                        system_ins1;
+	wire                        system_ins_priv1;
 	 
-	wire            system_ins2;
-	wire            system_ins_priv2;
+	wire                        system_ins2;
+	wire                        system_ins_priv2;
 
-    wire [1:0]      hit_staddr_off;
+    wire [1:0]                  hit_staddr_off;
 
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
@@ -594,10 +614,11 @@ module pipeline
    // idata_ok与新req要区分开？
    // assign idata_ok = icache_done & icache_busy;
    
-   assign icache_req_ok = ~icache_busy;
-   assign dcache_req_ok = ~dcache_busy;
+   assign icache_req_ok = icache_done | ~icache_busy;
+   assign dcache_req_ok = (|cpu_res_ready) | ~dcache_busy;
 
-   // assign ddata_ok = cpu_res_ready && dcache_busy;
+   // assign mmio_data_ok = (|mmio_res_ready) && mmio_busy;
+   assign mmio_req_ok = ~mmio_busy;
 
    // assign stall_IF = stall_ID | stall_DP | ~idata_ok;
    assign stall_IF = stall_ID | stall_DP;
@@ -2096,6 +2117,30 @@ module pipeline
 		   );
 */
 
+   // mmio_fsm在非busy的cycle，即可申请
+   mmio_fsm mmio(
+        .clk(clk),
+        .rst(reset),
+        .cpu_req_addr(mmio_r_req ? ldaddr : retaddr),
+        .cpu_req_data(retdata),
+        .cpu_req_funct3(retfunct3),
+        .cpu_req_rw(mmio_r_req ? 1'b0 : 1'b1),
+        .cpu_req_valid(mmio_r_req || mmio_w_req),
+
+        .mem_data_data(mmio_data),
+        .mem_data_ready(mmio_done),
+
+        .mem_req_addr(mmio_addr),
+        .mem_req_data(mmio_wdata),
+        .mem_req_byteenable(mmio_byteenable),
+        .mem_req_rw(mmio_we),
+        //.mem_req_valid
+
+        .cpu_res_data(mmio_res_data),
+        .cpu_res_ready(mmio_res_ready),
+        .busy(mmio_busy)
+   );
+
    dm_cache_pl dcache(
         .clk(clk),
         .rst(reset), 
@@ -2106,8 +2151,9 @@ module pipeline
         .cpu_req_valid(dcache_r_req || dcache_w_req),
         // dcache_r_req_en == 1 && kill_ld_req == 1的情况
         // 是还未确认dcache_r_req的情况下，就被kill掉了
-        // 这种情况无需向cache发送kill请求
-        .cpu_req_kill(~dcache_r_req_en && kill_ld_req),
+        // 1)这种情况无需向cache发送kill请求
+        // 2)exunit_ldst执行的是st的情况也无需发送kill请求
+        .cpu_req_kill(buf_dstval_ldst && ~dcache_r_req_en && kill_ld_req),
 
         .mem_data_data(dmem_data),
         .mem_data_ready(dmem_done),
@@ -2123,17 +2169,60 @@ module pipeline
         .busy(dcache_busy)
    );
 
-   assign dcache_r_req = dcache_r_req_en & dcache_req_ok & memoccupy_ld;
-   assign dcache_w_req = stretire;
+   assign dcache_r_req      = dcache_r_req_en && dcache_req_ok && memoccupy_ld;
+   assign mmio_r_req        = mmio_r_req_en && mmio_req_ok && memoccupy_ld;
+
+   assign dcache_w_req_en   = ~retaddr[30] && ~dcache_r_req && dcache_req_ok;
+   assign mmio_w_req_en     = retaddr[30] && ~mmio_r_req && mmio_req_ok;
+
+   assign dcache_w_req      = dcache_w_req_en && dcache_req_ok && stretire;
+   assign mmio_w_req        = mmio_w_req_en && mmio_req_ok && stretire;
+
+   assign stretire_en =  retaddr[30] ? mmio_w_req : dcache_w_req_en;
+
+   assign ldaddr_ex = ex_src1_ldst + imm_ldst;
 
    always @ (posedge clk) begin
 
-        if (reset) dcache_r_req_en <= 1'b0;
+        if (reset) begin
+            dcache_r_req_en <= 1'b0;
+            mmio_r_req_en <= 1'b0;
+        end
 		// 应该在ld_issue后一个周期，也就是ld执行开始后，判断是否申请dcache_req
         // ld开始执行后，才可判断是否hit sb等操作，需要时间
-        else if (issue_ldst && dstval_ldst) dcache_r_req_en <= 1'b1;
-        // 在可以申请dcache_req之后的cycle，应该clear
-        else if (dcache_r_req_en && (dcache_req_ok || ~memoccupy_ld)) dcache_r_req_en <= 1'b0;
+        else if (issue_ldst && dstval_ldst) begin
+            dcache_r_req_en <= ~ldaddr_ex[30];
+            mmio_r_req_en <= ldaddr_ex[30];
+        end
+        // 以下case在dcache_r_req_en的清空下，应该被clear
+        // 1)如果dcache可以申请，就应该清空，不管是否申请
+        // 2)如果dcache不可以申请，但是命中SB或者ld因为prmiss被取消(~memoccupy_ld)
+        // mmio_fsm同理
+        else begin
+            if (dcache_r_req_en && (dcache_req_ok || ~memoccupy_ld))
+                dcache_r_req_en <= 1'b0;
+            if (mmio_r_req_en && (mmio_req_ok || ~memoccupy_ld))
+                mmio_r_req_en <= 1'b0;
+        end
+/*
+        //在req_valid为真的情况下，不应该申请dcache_req
+        //dcache接到申请后最快也要2cycle才能返回结果
+        //req_valid为真的下个cycle会被清除，然后就可以申请
+        if (mmio_req_ok && ~mmio_r_req && ~mmio_w_req) begin
+            if (memoccupy_ld && mmio_r_req_en) begin
+                mmio_r_req <= 1'b1;
+                mmio_r_req_en <= 1'b0;
+            end else if (~memoccupy_ld && stretire && retaddr[30]) begin
+                mmio_w_req <= 1'b1;
+                retaddr_mmio_latch <= retaddr;
+                retdata_mmio_latch <= retdata;
+                retfunct3_mmio_latch <= retfunct3;
+            end
+        end
+        else begin
+            mmio_r_req <= 1'b0;
+            mmio_w_req <= 1'b0;
+        end*/
    end
 
 /*
@@ -2168,6 +2257,7 @@ module pipeline
         end
    end
 */
+
    storebuf sb
      (
       .clk(clk),
@@ -2188,7 +2278,7 @@ module pipeline
       .retdata(retdata),
       .retaddr(retaddr),
       .retfunct3(retfunct3),
-      .stretire_en(~dcache_r_req && dcache_req_ok),
+      .stretire_en(stretire_en),
       .sb_full(sb_full),
       //.dmem_w_done(cpu_res_ready),
       .cache_busy(dcache_busy),
@@ -2223,7 +2313,7 @@ module pipeline
 		      .kill_speculative(kill_speculative_ldst),
 		      .busy_next(busy_next_ldst),
               //.cache_busy(dcache_busy),
-              .cache_done(cpu_res_ready[0]),
+              .cache_done(cpu_res_ready[0] || mmio_res_ready[0]),
               //.cache_req(dcache_r_req),
 		      .stfin(stfin),
 		      .memoccupy_ld(memoccupy_ld),
@@ -2235,7 +2325,7 @@ module pipeline
               .ldfunct3(ldfunct3),
 		      .ldaddr(ldaddr),
 		      .lddatasb(lddatasb),
-		      .lddatamem(cpu_res_data)
+		      .lddatamem(cpu_res_ready[0] ? cpu_res_data : {96'h0, mmio_res_data})
 		      );
 
    always @ (posedge clk) begin

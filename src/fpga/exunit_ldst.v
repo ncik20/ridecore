@@ -265,7 +265,7 @@ module exunit_ldst
        (ldaddr[3:2] == 2'b10) ? lddatamem[95-: 32] : lddatamem[127-:32];
 
    always @ (posedge clk) begin
-      if (reset | killspec1 | ~busy | (~dstval & fullsb)) begin
+      if (reset || killspec1 || ~busy || (~dstval && fullsb)) begin
 	 dstval_latch <= 0;
      //ld_io_latch <= 0;
      funct3_latch <= 0;
