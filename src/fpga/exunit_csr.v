@@ -26,9 +26,10 @@ module exunit_csr
    );
 
    reg 			       busy;
-   reg [`DATA_LEN-1:0] mstatus;
-   reg [`DATA_LEN-1:0] mtvec;
-   //reg [`DATA_LEN-1:0] mepc;
+   reg [`DATA_LEN-1:0] mstatus;     //0x300
+   reg [`DATA_LEN-1:0] mtvec;       //0x305
+   reg [`DATA_LEN-1:0] mcause;      //0x342
+   //reg [`DATA_LEN-1:0] mepc;      //0x341
 
    assign rob_we = busy;
    assign rrf_we = busy & dstval;

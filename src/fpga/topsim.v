@@ -15,7 +15,10 @@ module top #(
    input                    reset_x,
 
    inout                    ps2_clk,
-   inout                    ps2_data
+   inout                    ps2_data,
+
+   input                    rs232_rxd,
+   output                   rs232_txd
    );
 
    wire [SOURCES-1:0]       src;    //Interrupt sources
@@ -47,6 +50,7 @@ module top #(
    wire [127:0]             avm_io_readdata;
    wire [127:0]             avm_io_readdata_plic;
    wire [127:0]             avm_io_readdata_keyboard;
+   wire [127:0]             avm_io_readdata_uart;
    wire [127:0]             avm_io_writedata;
    reg                      avm_io_readdatavalid;
 
@@ -74,8 +78,10 @@ module top #(
 
    wire [TARGETS-1:0]       irq;
 
-   assign src[5:0] = 6'b000000;
-   assign avm_io_readdata = (mmio_addr[9:8] == 2'b00) ? avm_io_readdata_plic : avm_io_readdata_keyboard;
+   assign src[4:0] = 5'b00000;
+   assign avm_io_readdata = (mmio_addr[9:8] == 2'b00) ? avm_io_readdata_plic :
+                            (mmio_addr[9:8] == 2'b10) ? avm_io_readdata_keyboard :
+                            (mmio_addr[9:8] == 2'b11) ? avm_io_readdata_uart : 128'd0;
 
    always @ (posedge clk) begin
       if (!reset_x) begin
@@ -210,7 +216,19 @@ module top #(
        //.ps2_0_avalon_ps2_slave_waitrequest(),
        .ps2_0_external_interface_CLK(ps2_clk),
        .ps2_0_external_interface_DAT(ps2_data),
-       .ps2_0_interrupt_irq(src[6])
+       .ps2_0_interrupt_irq(src[6]),
+
+       .rs232_0_avalon_rs232_slave_address(avm_io_address[2]),
+       .rs232_0_avalon_rs232_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[9:8] == 2'b11),
+       .rs232_0_avalon_rs232_slave_byteenable(4'b0001),
+       .rs232_0_avalon_rs232_slave_read(avm_io_read),
+       .rs232_0_avalon_rs232_slave_write(avm_io_write),
+       .rs232_0_avalon_rs232_slave_writedata(avm_io_writedata),
+       .rs232_0_avalon_rs232_slave_readdata(avm_io_readdata_uart),
+       //.rs232_0_avalon_rs232_slave_waitrequest(),
+       .rs232_0_external_interface_RXD(rs232_rxd),
+       .rs232_0_external_interface_TXD(rs232_txd),
+       .rs232_0_interrupt_irq(src[5])
    );
 
 /*
