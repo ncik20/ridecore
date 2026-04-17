@@ -163,7 +163,11 @@ module decoder(
                 end // if ((rs1 == 0) && (reg_to_wr_DX == 0))
 */
                 case (funct12)
+                    `RV32_FUNCT12_ECALL,
+                    `RV32_FUNCT12_EBREAK,
+                    `RV32_FUNCT12_SRET,
                     `RV32_FUNCT12_MRET : begin
+                    // `RV32_FUNCT12_WFI : begin
                         uses_rs1 = 1'b0;
                     end
                     default : illegal_instruction = 1'b1;

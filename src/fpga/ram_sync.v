@@ -91,6 +91,170 @@ module ram_sync_2r2w #(
    end
 endmodule // ram_sync_2r2w
 
+module ram_sync_1r1w_rden #(
+		       parameter BRAM_ADDR_WIDTH = `ADDR_LEN,
+		       parameter BRAM_DATA_WIDTH = `DATA_LEN,
+		       parameter DATA_DEPTH      = 32
+		       ) 
+   (
+    input wire 			     clk,
+    input wire [BRAM_ADDR_WIDTH-1:0] raddr1,
+    output reg [BRAM_DATA_WIDTH-1:0] rdata1,
+    input wire [BRAM_ADDR_WIDTH-1:0] waddr,
+    input wire [BRAM_DATA_WIDTH-1:0] wdata,
+    input wire 			     we,
+    input wire               rden
+    );
+
+   reg [BRAM_DATA_WIDTH-1:0] 			      mem [0:DATA_DEPTH-1];
+
+   always @ (posedge clk) begin
+      if (rden)
+        rdata1 <= mem[raddr1];
+
+      if (we)
+	    mem[waddr] <= wdata;
+   end
+endmodule // ram_sync_1r1w_rden
+
+module ram_sync_2r1w_2bank #(
+		       parameter BRAM_ADDR_WIDTH = `ADDR_LEN,
+		       parameter BRAM_DATA_WIDTH = `DATA_LEN,
+		       parameter DATA_DEPTH      = 32
+		       ) 
+   (
+    input  wire 			          clk,
+    input  wire [BRAM_ADDR_WIDTH-1:0] raddr1,
+    input  wire [BRAM_ADDR_WIDTH-1:0] raddr2,
+    output wire [BRAM_DATA_WIDTH-1:0] rdata1,
+    output wire [BRAM_DATA_WIDTH-1:0] rdata2,
+    input  wire [BRAM_ADDR_WIDTH-1:0] waddr1,
+    input  wire [BRAM_DATA_WIDTH-1:0] wdata1,
+    input  wire 			          we1,
+    input  wire                       rden
+    );
+
+    wire [BRAM_DATA_WIDTH-1:0] rdata1_;
+    wire [BRAM_DATA_WIDTH-1:0] rdata2_;
+
+    // 选择raddr1, raddr2中[0]位是0的地址
+    wire [BRAM_ADDR_WIDTH-1:0] raddr1_ = (raddr1[0] == 0) ? raddr1 : raddr2;
+    // 选择raddr1, raddr2中[0]位是1的地址
+    wire [BRAM_ADDR_WIDTH-1:0] raddr2_ = (raddr1[0] == 1) ? raddr1 : raddr2;
+
+    wire                       we1_    = (waddr1[0] == 0 && we1) ? 1'b1 : 1'b0;
+    wire                       we2_    = (waddr1[0] == 1 && we1) ? 1'b1 : 1'b0;
+
+    reg raddr1_0;
+
+    assign rdata1 = (raddr1_0 == 0) ? rdata1_ : rdata2_;
+    assign rdata2 = (raddr1_0 == 0) ? rdata2_ : rdata1_;
+   
+    always @ (posedge clk) begin
+        if (rden) raddr1_0 <= raddr1[0];
+    end
+
+   ram_sync_1r1w_rden #(
+    .BRAM_ADDR_WIDTH    (BRAM_ADDR_WIDTH-1),
+	.BRAM_DATA_WIDTH    (BRAM_DATA_WIDTH),
+	.DATA_DEPTH         (DATA_DEPTH/2)
+   ) mem0 (
+    .clk                (clk),
+    .raddr1             (raddr1_[BRAM_ADDR_WIDTH-1:1]),
+    .rdata1             (rdata1_),
+    .waddr              (waddr1[BRAM_ADDR_WIDTH-1:1]),
+    .wdata              (wdata1),
+    .we                 (we1_),
+    .rden               (rden)
+   );
+
+   ram_sync_1r1w_rden #(
+    .BRAM_ADDR_WIDTH    (BRAM_ADDR_WIDTH-1),
+	.BRAM_DATA_WIDTH    (BRAM_DATA_WIDTH),
+	.DATA_DEPTH         (DATA_DEPTH/2)
+   ) mem1 (
+    .clk                (clk),
+    .raddr1             (raddr2_[BRAM_ADDR_WIDTH-1:1]),
+    .rdata1             (rdata2_),
+    .waddr              (waddr1[BRAM_ADDR_WIDTH-1:1]),
+    .wdata              (wdata1),
+    .we                 (we2_),
+    .rden               (rden)
+   );
+endmodule // ram_sync_2r1w_2bank
+
+module ram_sync_2r2w_2bank #(
+		       parameter BRAM_ADDR_WIDTH = `ADDR_LEN,
+		       parameter BRAM_DATA_WIDTH = `DATA_LEN,
+		       parameter DATA_DEPTH      = 32
+		       ) 
+   (
+    input  wire 			          clk,
+    input  wire [BRAM_ADDR_WIDTH-1:0] raddr1,
+    input  wire [BRAM_ADDR_WIDTH-1:0] raddr2,
+    output wire [BRAM_DATA_WIDTH-1:0] rdata1,
+    output wire [BRAM_DATA_WIDTH-1:0] rdata2,
+    input  wire [BRAM_ADDR_WIDTH-1:0] waddr1,
+    input  wire [BRAM_ADDR_WIDTH-1:0] waddr2,
+    input  wire [BRAM_DATA_WIDTH-1:0] wdata1,
+    input  wire [BRAM_DATA_WIDTH-1:0] wdata2,
+    input  wire 			          we1,
+    input  wire 			          we2
+    );
+
+    wire [BRAM_DATA_WIDTH-1:0] rdata1_;
+    wire [BRAM_DATA_WIDTH-1:0] rdata2_;
+
+    // 选择raddr1, raddr2中[0]位是0的地址
+    wire [BRAM_ADDR_WIDTH-1:0] raddr1_ = (raddr1[0] == 0) ? raddr1 : raddr2;
+    // 选择raddr1, raddr2中[0]位是1的地址
+    wire [BRAM_ADDR_WIDTH-1:0] raddr2_ = (raddr1[0] == 1) ? raddr1 : raddr2;
+
+    wire [BRAM_ADDR_WIDTH-1:0] waddr1_ = (waddr1[0] == 0) ? waddr1 : waddr2;
+    wire [BRAM_ADDR_WIDTH-1:0] waddr2_ = (waddr1[0] == 1) ? waddr1 : waddr2;
+
+    wire [BRAM_DATA_WIDTH-1:0] wdata1_ = (waddr1[0] == 0) ? wdata1 : wdata2;
+    wire [BRAM_DATA_WIDTH-1:0] wdata2_ = (waddr1[0] == 1) ? wdata1 : wdata2;
+
+    wire                       we1_    = ((waddr1[0] == 0 && we1) || (waddr2[0] == 0 && we2)) ? 1'b1 : 1'b0;
+    wire                       we2_    = ((waddr1[0] == 1 && we1) || (waddr2[0] == 1 && we2)) ? 1'b1 : 1'b0;
+
+    reg raddr1_0;
+
+    assign rdata1 = (raddr1_0 == 0) ? rdata1_ : rdata2_;
+    assign rdata2 = (raddr1_0 == 0) ? rdata2_ : rdata1_;
+   
+    always @ (posedge clk) begin
+        raddr1_0 <= raddr1[0];
+    end
+
+   ram_sync_1r1w #(
+    .BRAM_ADDR_WIDTH    (BRAM_ADDR_WIDTH-1),
+	.BRAM_DATA_WIDTH    (BRAM_DATA_WIDTH),
+	.DATA_DEPTH         (DATA_DEPTH/2)
+   ) mem0 (
+    .clk                (clk),
+    .raddr1             (raddr1_[BRAM_ADDR_WIDTH-1:1]),
+    .rdata1             (rdata1_),
+    .waddr              (waddr1_[BRAM_ADDR_WIDTH-1:1]),
+    .wdata              (wdata1_),
+    .we                 (we1_)
+   );
+
+   ram_sync_1r1w #(
+    .BRAM_ADDR_WIDTH    (BRAM_ADDR_WIDTH-1),
+	.BRAM_DATA_WIDTH    (BRAM_DATA_WIDTH),
+	.DATA_DEPTH         (DATA_DEPTH/2)
+   ) mem1 (
+    .clk                (clk),
+    .raddr1             (raddr2_[BRAM_ADDR_WIDTH-1:1]),
+    .rdata1             (rdata2_),
+    .waddr              (waddr2_[BRAM_ADDR_WIDTH-1:1]),
+    .wdata              (wdata2_),
+    .we                 (we2_)
+   );
+endmodule // ram_sync_2r2w_2bank
+
 module ram_sync_4r1w #(
 		       parameter BRAM_ADDR_WIDTH = `ADDR_LEN,
 		       parameter BRAM_DATA_WIDTH = `DATA_LEN,

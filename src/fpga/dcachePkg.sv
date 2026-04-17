@@ -1,7 +1,7 @@
 package cache_def;
 	//data structures for cache tag & data
 	parameter int TAGMSB = 31;	//tag msb
-	parameter int TAGLSB = 13;	//tag lsb
+	parameter int TAGLSB = 14;	//tag lsb
 
 	//data structure for cache tag
 	typedef struct packed {
@@ -12,7 +12,7 @@ package cache_def;
 
 	//data structure for cache memory request
 	typedef struct {
-		bit [8:0]index;			//9-bit index
+		bit [TAGLSB-4-1:0]index;//index
 		bit we;					//write enable
         bit en;
 	}cache_req_type;

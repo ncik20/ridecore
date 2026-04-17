@@ -18,6 +18,7 @@ module brimm_gen
    assign brimm = (opcode == `RV32_BRANCH) ? br_offset :
 		  (opcode == `RV32_JAL) ? jal_offset :
 		  (opcode == `RV32_JALR) ? jalr_offset :
+		  (opcode == `RV32_SYSTEM) ? {{20{1'b0}}, inst[31:20]} :
 		  `DATA_LEN'b0;
 
 endmodule // brimm_gen

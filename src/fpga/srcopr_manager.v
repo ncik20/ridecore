@@ -14,12 +14,31 @@ module sourceoperand_manager
    output wire 		       rdy
    );
 
+   wire [`DATA_LEN-1:0] src_;
+   wire [1:0] sel;
+/*
    assign src = src_eq_0 ? `DATA_LEN'b0 :
 		src_eq_dst1 ? dst1_renamed :
 		~arf_busy ? arfdata :
 		rrf_valid ? rrfdata :
 		rrftag;
+*/
+   assign src = src_eq_0 ? `DATA_LEN'b0 : src_;
+   assign sel =
+		src_eq_dst1 ? 2'b00 :
+		~arf_busy   ? 2'b01 :
+		rrf_valid   ? 2'b10 :
+                      2'b11 ;
+
    assign rdy = src_eq_0 | (~src_eq_dst1 & (~arf_busy | rrf_valid));
+
+   mux4 mux_(
+    {26'd0,dst1_renamed},
+	arfdata,
+	rrfdata,
+	{26'd0,rrftag},
+	sel,
+	src_);
 
 endmodule // sourceoperand_manager
 `default_nettype wire

@@ -122,7 +122,7 @@ module exunit_ldst
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
    output wire [`RRF_SEL-1:0] 	    wrrftag,
-   output wire                      killspec1,
+   output wire                      kill_ld_req,
    output wire 			            kill_speculative,
    output wire 			            busy_next,
    //Signal dcache
@@ -148,7 +148,7 @@ module exunit_ldst
    reg 				        busy;
    wire 			        clearbusy;
    wire [`ADDR_LEN-1:0]     effaddr;
-   //wire                     killspec1;
+   wire                     killspec1;
    wire                     must_read_mem;
    wire                     sb_ld_ok;
    wire                     ld_ok;
@@ -222,7 +222,7 @@ module exunit_ldst
    assign clearbusy = (killspec1 || ld_ok || (~dstval && ~fullsb)) ? 1'b1 : 1'b0;
    assign killspec1 = ((spectag & spectagfix) != 0) && specbit && prmiss;
    assign kill_speculative = ((spectag_latch & spectagfix) != 0) && specbit_latch && prmiss;
-
+   assign kill_ld_req = busy && killspec1;
    //assign result_lb = (hitsb_latch && ~ld_io_latch) ? lddatasb_latch[7:0] :
    //    lddatamem_latch[7:0];
 

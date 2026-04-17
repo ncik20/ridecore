@@ -21,7 +21,8 @@ module rs_branch_ent
    input wire [`GSH_BHR_LEN-1:0]  wbhr,
    input wire 			  wprcond,
    input wire [`ADDR_LEN-1:0] 	  wpraddr,
-   input wire [6:0] 		  wopcode,
+   input wire [6:0] 		    wopcode,
+   input wire [`REG_SEL-1:0]    wdst,
    input wire 			  we,
    output wire [`DATA_LEN-1:0] 	  ex_src1,
    output wire [`DATA_LEN-1:0] 	  ex_src2,
@@ -35,7 +36,8 @@ module rs_branch_ent
    output reg [`GSH_BHR_LEN-1:0]  bhr,
    output reg 			  prcond,
    output reg [`ADDR_LEN-1:0] 	  praddr,
-   output reg [6:0] 		  opcode,
+   output reg [6:0] 		    opcode,
+   output reg [`REG_SEL-1:0]    dst,
    //EXRSLT
    input wire [`DATA_LEN-1:0] 	  exrslt1,
    input wire [`RRF_SEL-1:0] 	  exdst1,
@@ -85,6 +87,7 @@ module rs_branch_ent
 	 prcond <= 0;
 	 praddr <= 0;
 	 opcode <= 0;
+	 dst <= 0;
 	 
 	 src1 <= 0;
 	 src2 <= 0;
@@ -101,6 +104,7 @@ module rs_branch_ent
 	 prcond <= wprcond;
 	 praddr <= wpraddr;
 	 opcode <= wopcode;
+     dst <= wdst;
 
 	 src1 <= wsrc1;
 	 src2 <= wsrc2;
@@ -203,6 +207,7 @@ module rs_branch
    input wire 			     wprcond_1,
    input wire [`ADDR_LEN-1:0] 	     wpraddr_1,
    input wire [6:0] 		     wopcode_1,
+   input wire [`REG_SEL-1:0]     wdst_1,
 
    //WriteSignal2
    input wire [`ADDR_LEN-1:0] 	     wpc_2,
@@ -220,6 +225,7 @@ module rs_branch
    input wire 			     wprcond_2,
    input wire [`ADDR_LEN-1:0] 	     wpraddr_2,
    input wire [6:0] 		     wopcode_2,
+   input wire [`REG_SEL-1:0]     wdst_2,
 
    //ReadSignal
    output wire [`DATA_LEN-1:0] 	     ex_src1,
@@ -236,6 +242,7 @@ module rs_branch
    output wire 			     prcond,
    output wire [`ADDR_LEN-1:0] 	     praddr,
    output wire [6:0] 		     opcode,
+   output wire [`REG_SEL-1:0]    dst,
   
    //EXRSLT
    input wire [`DATA_LEN-1:0] 	     exrslt1,
@@ -272,6 +279,7 @@ module rs_branch
    wire 			     prcond_0;
    wire [`ADDR_LEN-1:0] 	     praddr_0;
    wire [6:0] 			     opcode_0;
+   wire [`REG_SEL-1:0]       dst_0;
    //_1
    wire [`DATA_LEN-1:0] 	     ex_src1_1;
    wire [`DATA_LEN-1:0] 	     ex_src2_1;
@@ -286,6 +294,7 @@ module rs_branch
    wire 			     prcond_1;
    wire [`ADDR_LEN-1:0] 	     praddr_1;
    wire [6:0] 			     opcode_1;
+   wire [`REG_SEL-1:0]       dst_1;
    //_2
    wire [`DATA_LEN-1:0] 	     ex_src1_2;
    wire [`DATA_LEN-1:0] 	     ex_src2_2;
@@ -300,6 +309,7 @@ module rs_branch
    wire 			     prcond_2;
    wire [`ADDR_LEN-1:0] 	     praddr_2;
    wire [6:0] 			     opcode_2;
+   wire [`REG_SEL-1:0]       dst_2;
    //_3
    wire [`DATA_LEN-1:0] 	     ex_src1_3;
    wire [`DATA_LEN-1:0] 	     ex_src2_3;
@@ -314,6 +324,7 @@ module rs_branch
    wire 			     prcond_3;
    wire [`ADDR_LEN-1:0] 	     praddr_3;
    wire [6:0] 			     opcode_3;
+   wire [`REG_SEL-1:0]       dst_3;
    
    reg [`BRANCH_ENT_NUM-1:0] 	     specbitvec;
 
@@ -396,6 +407,7 @@ module rs_branch
 		      .wpraddr((we1 && (waddr1 == 0)) ? wpraddr_1 : wpraddr_2),
 		      .wprcond((we1 && (waddr1 == 0)) ? wprcond_1 : wprcond_2),
 		      .wopcode((we1 && (waddr1 == 0)) ? wopcode_1 : wopcode_2),
+		      .wdst((we1 && (waddr1 == 0)) ? wdst_1 : wdst_2),
 		      .we((we1 && (waddr1 == 0)) || (we2 && (waddr2 == 0))),
 		      .ex_src1(ex_src1_0),
 		      .ex_src2(ex_src2_0),
@@ -410,6 +422,7 @@ module rs_branch
 		      .prcond(prcond_0),
 		      .praddr(praddr_0),
 		      .opcode(opcode_0),
+		      .dst(dst_0),
 		      .exrslt1(exrslt1),
 		      .exdst1(exdst1),
 		      .kill_spec1(kill_spec1),
@@ -448,6 +461,7 @@ module rs_branch
 		      .wpraddr((we1 && (waddr1 == 1)) ? wpraddr_1 : wpraddr_2),
 		      .wprcond((we1 && (waddr1 == 1)) ? wprcond_1 : wprcond_2),
 		      .wopcode((we1 && (waddr1 == 1)) ? wopcode_1 : wopcode_2),
+		      .wdst((we1 && (waddr1 == 1)) ? wdst_1 : wdst_2),
 		      .we((we1 && (waddr1 == 1)) || (we2 && (waddr2 == 1))),
 		      .ex_src1(ex_src1_1),
 		      .ex_src2(ex_src2_1),
@@ -462,6 +476,7 @@ module rs_branch
 		      .prcond(prcond_1),
 		      .praddr(praddr_1),
 		      .opcode(opcode_1),
+		      .dst(dst_1),
 		      .exrslt1(exrslt1),
 		      .exdst1(exdst1),
 		      .kill_spec1(kill_spec1),
@@ -500,6 +515,7 @@ module rs_branch
 		      .wpraddr((we1 && (waddr1 == 2)) ? wpraddr_1 : wpraddr_2),
 		      .wprcond((we1 && (waddr1 == 2)) ? wprcond_1 : wprcond_2),
 		      .wopcode((we1 && (waddr1 == 2)) ? wopcode_1 : wopcode_2),
+		      .wdst((we1 && (waddr1 == 2)) ? wdst_1 : wdst_2),
 		      .we((we1 && (waddr1 == 2)) || (we2 && (waddr2 == 2))),
 		      .ex_src1(ex_src1_2),
 		      .ex_src2(ex_src2_2),
@@ -514,6 +530,7 @@ module rs_branch
 		      .prcond(prcond_2),
 		      .praddr(praddr_2),
 		      .opcode(opcode_2),
+		      .dst(dst_2),
 		      .exrslt1(exrslt1),
 		      .exdst1(exdst1),
 		      .kill_spec1(kill_spec1),
@@ -552,6 +569,7 @@ module rs_branch
 		      .wpraddr((we1 && (waddr1 == 3)) ? wpraddr_1 : wpraddr_2),
 		      .wprcond((we1 && (waddr1 == 3)) ? wprcond_1 : wprcond_2),
 		      .wopcode((we1 && (waddr1 == 3)) ? wopcode_1 : wopcode_2),
+		      .wdst((we1 && (waddr1 == 3)) ? wdst_1 : wdst_2),
 		      .we((we1 && (waddr1 == 3)) || (we2 && (waddr2 == 3))),
 		      .ex_src1(ex_src1_3),
 		      .ex_src2(ex_src2_3),
@@ -566,6 +584,7 @@ module rs_branch
 		      .prcond(prcond_3),
 		      .praddr(praddr_3),
 		      .opcode(opcode_3),
+		      .dst(dst_3),
 		      .exrslt1(exrslt1),
 		      .exdst1(exdst1),
 		      .kill_spec1(kill_spec1),
@@ -633,7 +652,10 @@ module rs_branch
    assign opcode = (issueaddr == 0) ? opcode_0 :
 		   (issueaddr == 1) ? opcode_1 :
 		   (issueaddr == 2) ? opcode_2 : opcode_3;
-   
-   
+
+   assign dst = (issueaddr == 0) ? dst_0 :
+		   (issueaddr == 1) ? dst_1 :
+		   (issueaddr == 2) ? dst_2 : dst_3;
+
 endmodule // rs_branch
 `default_nettype wire

@@ -42,8 +42,11 @@ module arf
    input wire [`SPECTAG_LEN-1:0] prtag,
    input wire [`SPECTAG_LEN-1:0] mpft_valid1,
    input wire [`SPECTAG_LEN-1:0] mpft_valid2,
-   input wire [4:0] raddr4test,
-   output wire [31:0] rdata4test
+   input wire [6:0] 		     ex_branch_opcode,
+   input wire [`REG_SEL-1:0] 	 ex_branch_dst,
+   input wire [`RRF_SEL-1:0] 	 ex_branch_rrftag
+   // input wire [4:0] raddr4test,
+   // output wire [31:0] rdata4test
    );
 
    // Set priority on instruction2 WriteBack
@@ -83,9 +86,9 @@ module arf
 	   .wdata2(wdata2),
 	   //	   .we1(we1_prior2),
 	   .we1(we1_0reg),
-	   .we2(we2_0reg),
-       .raddr4test(raddr4test),
-       .rdata4test(rdata4test)
+	   .we2(we2_0reg)
+       // .raddr4test(raddr4test),
+       // .rdata4test(rdata4test)
 	   );
 
    
@@ -123,7 +126,10 @@ module arf
 		     .prsuccess(prsuccess),
 		     .prtag(prtag),
 		     .mpft_valid1(mpft_valid1),
-		     .mpft_valid2(mpft_valid2)
+		     .mpft_valid2(mpft_valid2),
+             .ex_branch_opcode(ex_branch_opcode),
+             .ex_branch_dst(ex_branch_dst),
+             .ex_branch_rrftag(ex_branch_rrftag)
 		     );
    
 
@@ -193,8 +199,13 @@ module renaming_table
    input wire 			 prsuccess,
    input wire [`SPECTAG_LEN-1:0] prtag,
    input wire [`SPECTAG_LEN-1:0] mpft_valid1,
-   input wire [`SPECTAG_LEN-1:0] mpft_valid2
+   input wire [`SPECTAG_LEN-1:0] mpft_valid2,
+   input wire [6:0] 		     ex_branch_opcode,
+   input wire [`REG_SEL-1:0] 	 ex_branch_dst,
+   input wire [`RRF_SEL-1:0] 	 ex_branch_rrftag
    );
+
+   reg [`REG_NUM-1:0] 		 busy;
    
    reg [`REG_NUM-1:0] 		 busy_0;
    reg [`REG_NUM-1:0] 		 tag0_0;
@@ -244,12 +255,12 @@ module renaming_table
    reg [`REG_NUM-1:0] 		 tag4_master;
    reg [`REG_NUM-1:0] 		 tag5_master;
 
-   wire [`REG_NUM-1:0] 		 tag0;
-   wire [`REG_NUM-1:0] 		 tag1;
-   wire [`REG_NUM-1:0] 		 tag2;
-   wire [`REG_NUM-1:0] 		 tag3;
-   wire [`REG_NUM-1:0] 		 tag4;
-   wire [`REG_NUM-1:0] 		 tag5;
+   reg [`REG_NUM-1:0] 		 tag0;
+   reg [`REG_NUM-1:0] 		 tag1;
+   reg [`REG_NUM-1:0] 		 tag2;
+   reg [`REG_NUM-1:0] 		 tag3;
+   reg [`REG_NUM-1:0] 		 tag4;
+   reg [`REG_NUM-1:0] 		 tag5;
 
    wire [`SPECTAG_LEN-1:0] 	 wesetvec1 = ~mpft_valid1;
    wire [`SPECTAG_LEN-1:0] 	 wesetvec2 = ~mpft_valid2;
@@ -444,6 +455,78 @@ module renaming_table
 		      tag2_master[rs2_2], tag1_master[rs2_2], tag0_master[rs2_2]};
 
 
+    always @(*) begin
+
+        busy = 0;
+        tag0 = 0;
+        tag1 = 0;
+        tag2 = 0;
+        tag3 = 0;
+        tag4 = 0;
+        tag5 = 0;
+
+        if (prmiss) begin
+            case(prtag)
+                5'b00010:begin
+                    busy = busy_1;
+                    tag0 = tag0_1;
+                    tag1 = tag1_1;
+                    tag2 = tag2_1;
+                    tag3 = tag3_1;
+                    tag4 = tag4_1;
+                    tag5 = tag5_1;
+                end
+                5'b00100:begin
+                    busy = busy_2;
+                    tag0 = tag0_2;
+                    tag1 = tag1_2;
+                    tag2 = tag2_2;
+                    tag3 = tag3_2;
+                    tag4 = tag4_2;
+                    tag5 = tag5_2;
+                end
+                5'b01000:begin
+                    busy = busy_3;
+                    tag0 = tag0_3;
+                    tag1 = tag1_3;
+                    tag2 = tag2_3;
+                    tag3 = tag3_3;
+                    tag4 = tag4_3;
+                    tag5 = tag5_3;
+                end
+                5'b10000:begin
+                    busy = busy_4;
+                    tag0 = tag0_4;
+                    tag1 = tag1_4;
+                    tag2 = tag2_4;
+                    tag3 = tag3_4;
+                    tag4 = tag4_4;
+                    tag5 = tag5_4;
+                end
+                5'b00001:begin
+                    busy = busy_0;
+                    tag0 = tag0_0;
+                    tag1 = tag1_0;
+                    tag2 = tag2_0;
+                    tag3 = tag3_0;
+                    tag4 = tag4_0;
+                    tag5 = tag5_0;
+                end
+            endcase
+
+            // Jal or JalR
+            if ((ex_branch_opcode == 7'b1101111 || ex_branch_opcode == 7'b1100111) && ex_branch_dst != 0) begin
+                busy[ex_branch_dst] = 1'b1;
+                tag0[ex_branch_dst] = ex_branch_rrftag[0];
+                tag1[ex_branch_dst] = ex_branch_rrftag[1];
+                tag2[ex_branch_dst] = ex_branch_rrftag[2];
+                tag3[ex_branch_dst] = ex_branch_rrftag[3];
+                tag4[ex_branch_dst] = ex_branch_rrftag[4];
+                tag5[ex_branch_dst] = ex_branch_rrftag[5];
+            end
+        end
+    end
+
    
    always @ (posedge clk) begin
       if (reset || irq_flush) begin
@@ -462,6 +545,13 @@ module renaming_table
 	    busy_4 <= (prtag == 5'b10000) ? next_bsymas : (next_bsyand_4 & busy_4);
 	    busy_0 <= (prtag == 5'b00001) ? next_bsymas : (next_bsyand_0 & busy_0);	    
 	 end else if (prmiss) begin // if (prsuccess)
+        busy_0 <= busy;
+        busy_1 <= busy;
+        busy_2 <= busy;
+        busy_3 <= busy;
+        busy_4 <= busy;
+        busy_master <= busy;
+/*
 	    if (prtag == 5'b00010) begin
 	       busy_0 <= busy_1;
 	       busy_1 <= busy_1;
@@ -498,6 +588,7 @@ module renaming_table
 	       busy_4 <= busy_0;
 	       busy_master <= busy_0;
 	    end
+*/
 	 end else begin // if (prmiss)
 	    /*
 	     if (setbusy1_j)
@@ -650,6 +741,43 @@ module renaming_table
 	    tag5_0 <= tag5_master;
 	 end
       end else if (prmiss) begin // if (prsuccess)
+	    tag0_0 <= tag0;
+	    tag1_0 <= tag1;
+	    tag2_0 <= tag2;
+	    tag3_0 <= tag3;
+	    tag4_0 <= tag4;
+	    tag5_0 <= tag5;
+	    tag0_1 <= tag0;
+	    tag1_1 <= tag1;
+	    tag2_1 <= tag2;
+	    tag3_1 <= tag3;
+	    tag4_1 <= tag4;
+	    tag5_1 <= tag5;
+	    tag0_2 <= tag0;
+	    tag1_2 <= tag1;
+	    tag2_2 <= tag2;
+	    tag3_2 <= tag3;
+	    tag4_2 <= tag4;
+	    tag5_2 <= tag5;
+	    tag0_3 <= tag0;
+	    tag1_3 <= tag1;
+	    tag2_3 <= tag2;
+	    tag3_3 <= tag3;
+	    tag4_3 <= tag4;
+	    tag5_3 <= tag5;
+	    tag0_4 <= tag0;
+	    tag1_4 <= tag1;
+	    tag2_4 <= tag2;
+	    tag3_4 <= tag3;
+	    tag4_4 <= tag4;
+	    tag5_4 <= tag5;
+	    tag0_master <= tag0;
+	    tag1_master <= tag1;
+	    tag2_master <= tag2;
+	    tag3_master <= tag3;
+	    tag4_master <= tag4;
+	    tag5_master <= tag5;
+/*
 	 if (prtag == 5'b00010) begin
 	    tag0_0 <= tag0_1;
 	    tag1_0 <= tag1_1;
@@ -836,6 +964,7 @@ module renaming_table
 	    tag4_master <= tag4_0;
 	    tag5_master <= tag5_0;
 	 end 
+*/
       end else begin // if (prmiss)
 	 if (settagbusy1) begin
 	    //TAG0

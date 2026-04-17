@@ -18,7 +18,8 @@ module exunit_branch
    input wire [`ADDR_LEN-1:0] 	  praddr,
    input wire [6:0] 		  opcode,
    input wire 			  issue,
-   input wire [`ADDR_LEN-1:0] 	  mepc, 
+   input wire [`ADDR_LEN-1:0] 	  mtvec,
+   input wire [`ADDR_LEN-1:0] 	  mepc,
    output wire [`DATA_LEN-1:0] 	  result,
    output wire 			  rrf_we,
    output wire 			  rob_we, //set finish
@@ -27,23 +28,30 @@ module exunit_branch
    output wire [`ADDR_LEN-1:0] 	  jmpaddr,
    output wire [`ADDR_LEN-1:0] 	  jmpaddr_taken,
    output wire 			  brcond,
-   output wire [`SPECTAG_LEN-1:0] tagregfix
+   output wire [`SPECTAG_LEN-1:0] tagregfix,
+   output wire            ecall,
+   output wire            ebreak
    );
 
-   reg 			       busy;
-   
-   wire [`DATA_LEN-1:0]        comprslt;
-   wire 		       addrmatch = (jmpaddr == praddr) ? 1'b1 : 1'b0;
+   reg 			        busy;
 
-   
-   assign rob_we = busy & ~irq_flush;
-   assign rrf_we = busy & dstval & ~irq_flush;
+   wire [`DATA_LEN-1:0] comprslt;
+   wire 		        addrmatch = (jmpaddr == praddr) ? 1'b1 : 1'b0;
+
+   assign rob_we = busy && ~irq_flush;
+   assign rrf_we = dstval && rob_we;
+   assign prsuccess = addrmatch && rob_we;
+   // 为了不影响commit指令更新arf的busy位，添加irq_flush条件
+   assign prmiss = ~addrmatch && rob_we; 
+
+   assign ecall  = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_ECALL) && rob_we;
+   assign ebreak = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_EBREAK) && rob_we;
+
    assign result = pc + 4;
-   assign prsuccess = busy & addrmatch & ~irq_flush;
-   assign prmiss = busy & ~addrmatch & ~irq_flush; //为了不影响commit指令更新arf的busy位，添加irq_flush条件
    assign jmpaddr = brcond ? jmpaddr_taken : (pc + 4);
-   assign jmpaddr_taken = (opcode == `RV32_SYSTEM) ? mepc :
-       (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
+   assign jmpaddr_taken = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_MRET) ? mepc :
+                          (opcode == `RV32_SYSTEM) ? {mtvec[31:2], 2'b0} :
+                          (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
    
    assign brcond = ((opcode == `RV32_JAL) || (opcode == `RV32_JALR) || 
                     (opcode == `RV32_SYSTEM)) ? 1'b1 : comprslt[0];

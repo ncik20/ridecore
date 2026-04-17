@@ -1,6 +1,6 @@
 `include "define.v"
 `include "constants.vh"
-
+`default_nettype none
 module top #(
   //PLIC Parameters
   parameter SOURCES           = 7,  //Number of interrupt sources
@@ -11,16 +11,18 @@ module top #(
   parameter HAS_CONFIG_REG    = 0   //Is the 'configuration' register implemented?
 )
   (
-   input                    clk,
-   input                    reset_x,
+   input  wire                  clk,
+   input  wire                  clk_rtc,
+   input  wire                  reset_x,
 
-   inout                    ps2_clk,
-   inout                    ps2_data,
+   inout  wire                  ps2_clk,
+   inout  wire                  ps2_data,
 
-   input                    rs232_rxd,
-   output                   rs232_txd
+   input  wire                  rs232_rxd,
+   output wire                  rs232_txd
    );
-
+   wire reset_n = reset_x;
+/*
    wire [SOURCES-1:0]       src;    //Interrupt sources
 
    wire [`ADDR_LEN-1:0]     pc;
@@ -31,28 +33,6 @@ module top #(
    wire                     kill_icache_req;
    wire [1:0]               icache_done;
    wire                     icache_busy;
-
-   wire                     avm_i_read;
-   wire [31:0]              avm_i_address;
-   wire [127:0]             avm_i_readdata;
-   wire                     avm_i_readdatavalid;
-
-   wire                     avm_d_read;
-   wire                     avm_d_write;
-   wire [31:0]              avm_d_address;
-   wire [127:0]             avm_d_readdata;
-   wire [127:0]             avm_d_writedata;
-   wire                     avm_d_readdatavalid;
-
-   wire                     avm_io_read;
-   wire                     avm_io_write;
-   wire [31:0]              avm_io_address;
-   wire [127:0]             avm_io_readdata;
-   wire [127:0]             avm_io_readdata_plic;
-   wire [127:0]             avm_io_readdata_keyboard;
-   wire [127:0]             avm_io_readdata_uart;
-   wire [127:0]             avm_io_writedata;
-   reg                      avm_io_readdatavalid;
 
    wire [1:0]               imem_we;
    wire [`ADDR_LEN-1:0]     imem_addr;
@@ -75,181 +55,139 @@ module top #(
 
    reg  [1:0]               rw_flag_;
    reg                      prog_loading;
+*/
 
-   wire [TARGETS-1:0]       irq;
+   wire                     avm_i_read;
+   wire [31:0]              avm_i_address;
+   wire [127:0]             avm_i_readdata;
+   reg                      avm_i_readdatavalid;
 
-   assign src[4:0] = 5'b00000;
-   assign avm_io_readdata = (mmio_addr[9:8] == 2'b00) ? avm_io_readdata_plic :
-                            (mmio_addr[9:8] == 2'b10) ? avm_io_readdata_keyboard :
-                            (mmio_addr[9:8] == 2'b11) ? avm_io_readdata_uart : 128'd0;
+   wire                     avm_d_read;
+   wire                     avm_d_write;
+   wire [31:0]              avm_d_address;
+   wire [127:0]             avm_d_readdata;
+   wire [127:0]             avm_d_writedata;
+   reg                      avm_d_readdatavalid;
+
+   wire                     avm_io_read;
+   wire                     avm_io_write;
+   wire [31:0]              avm_io_address;
+   wire [127:0]             avm_io_readdata;
+   wire [127:0]             avm_io_readdata_keyboard;
+   wire [127:0]             avm_io_readdata_uart;
+   wire [127:0]             avm_io_writedata;
+   reg                      avm_io_readdatavalid;
+
+   wire                     ridecore_0_irqps2_export;
+   wire                     ridecore_0_irqrs232_export;
+
+   reg  [31:0]              io_address;
+
+   assign avm_io_readdata = (io_address[9:8] == 2'b00) ? avm_io_readdata_keyboard :
+                            (io_address[9:8] == 2'b01) ? avm_io_readdata_uart : 128'd0;
+
+   reg iram_read;
+   reg dram_read;
+
+   // reg  [7:0]               led_out;
 
    always @ (posedge clk) begin
-      if (!reset_x) begin
-	    prog_loading <= 1'b1;
-        rw_flag_ <= 0;
+      if (!reset_n) begin
+          // led_out <= 0;
+          io_address <= 0;
+
+          iram_read <= 0;
+          dram_read <= 0;
+          avm_i_readdatavalid <= 0;
+          avm_d_readdatavalid <= 0;
+          avm_io_readdatavalid <= 0;
       end else begin
-	    prog_loading <= 0;
-        rw_flag_ <= 1;
+          // if (avm_io_write) led_out <= avm_io_writedata[7:0];
+          // else led_out <= led_out;
+
+          if (avm_io_write || avm_io_read) begin
+             avm_io_readdatavalid <= 1;
+             io_address <= avm_io_address;
+          end
+          else begin
+             avm_io_readdatavalid <= 0;
+             io_address <= 0;
+          end
+
+          if (avm_i_read)
+              iram_read <= 1;
+          else
+              iram_read <= 0;
+
+          if (avm_d_read)
+              dram_read <= 1;
+          else
+              dram_read <= 0;
+
+          if (iram_read)
+              avm_i_readdatavalid <= 1;
+          else
+              avm_i_readdatavalid <= 0;
+
+          if (dram_read)
+              avm_d_readdatavalid <= 1;
+          else
+              avm_d_readdatavalid <= 0;
       end
    end
 
-   pipeline pipe
-     (
-      .clk(clk),
-      .reset(~reset_x | prog_loading),
-      .icache_req(icache_req),
-      .kill_icache_req(kill_icache_req),
-      .pc(pc),
-      .cpu_res_pc(cpu_res_pc),
-      .idata(idata),
+wire [127:0] avm_i_readdata_ram_s1;
 
-      .dmem_we(dmem_we),
-      .dmem_addr(dmem_addr),
-      .dmem_byteenable(dmem_byteenable),
-      .dmem_wdata(dmem_wdata),
-      .dmem_data(dmem_data),
-      .dmem_done(dmem_done),
+	rc #(
+		.SOURCES           (7),
+		.TARGETS           (1),
+		.PRIORITIES        (8),
+		.MAX_PENDING_COUNT (1),
+		.HAS_THRESHOLD     (1),
+		.HAS_CONFIG_REG    (0)
+	) ridecore_0 (
+		.clk                  (clk),                                     //              clock.clk
+        .clk_rtc              (clk_rtc),
+		.reset_n              (reset_n),             //              reset.reset_n
 
-      .mmio_we(mmio_we),
-      .mmio_addr(mmio_addr),
-      .mmio_byteenable(mmio_byteenable),
-      .mmio_wdata(mmio_wdata),
-      .mmio_data(mmio_data),
-      .mmio_done(mmio_done),
+		.avm_d_read           (avm_d_read),                 //        data_master.read
+		.avm_d_write          (avm_d_write),                //                   .write
+		.avm_d_writedata      (avm_d_writedata),            //                   .writedata
+		.avm_d_address        (avm_d_address),              //                   .address
+		.avm_d_readdata       (avm_d_readdata),             //                   .readdata
+		.avm_d_readdatavalid  (avm_d_readdatavalid),        //                   .readdatavalid
+		//.avm_d_byteenable     (ridecore_0_data_master_byteenable),           //                   .byteenable
+		.avm_d_waitrequest    (1'b0),          //                   .waitrequest
+		//.avm_d_burstcount     (ridecore_0_data_master_burstcount),           //                   .burstcount
 
-      .icache_done(icache_done[0]),
-      .icache_busy(icache_busy),
+		.avm_i_read           (avm_i_read),          // instruction_master.read
+		//.avm_i_write          (ridecore_0_data_master_write),         //                   .write
+		//.avm_i_writedata      (ridecore_0_data_master_writedata),     //                   .writedata
+		.avm_i_address        (avm_i_address),       //                   .address
+		.avm_i_readdata       (avm_i_readdata),      //                   .readdata
+		.avm_i_readdatavalid  (avm_i_readdatavalid), //                   .readdatavalid
+		//.avm_i_byteenable     (ridecore_0_instruction_master_byteenable),    //                   .byteenable
+		.avm_i_waitrequest    (1'b0),   //                   .waitrequest
+		//.avm_i_burstcount     (ridecore_0_instruction_master_burstcount),    //                   .burstcount
 
-      .irq(irq)
-      ); 
+		.avm_io_read          (avm_io_read),                   //          io_master.read
+		.avm_io_write         (avm_io_write),                  //                   .write
+		.avm_io_writedata     (avm_io_writedata),              //                   .writedata
+		.avm_io_address       (avm_io_address),                //                   .address
+		.avm_io_readdata      (avm_io_readdata),               //                   .readdata
+		.avm_io_readdatavalid (avm_io_readdatavalid),          //                   .readdatavalid
+		//.avm_io_byteenable    (ridecore_0_io_master_byteenable),             //                   .byteenable
+		.avm_io_waitrequest   (1'b0),            //                   .waitrequest
+		//.avm_io_burstcount    (ridecore_0_io_master_burstcount),             //                   .burstcount
 
-   avalon_sdr sdr_io(
-      .clk(clk),
-      .reset(~reset_x),      
-      .avm_m0_write(avm_io_write),
-      .avm_m0_writedata(avm_io_writedata),
-      .avm_m0_read(avm_io_read),
-      .avm_m0_address(avm_io_address),
-      .avm_m0_readdata(avm_io_readdata),
-      .avm_m0_readdatavalid(avm_io_readdatavalid),
-      // .avm_m0_byteenable(avm_io_byteenable),
-      // .avm_m0_waitrequest(avm_io_waitrequest),
-      .avm_m0_waitrequest(1'b0),
-      // .avm_m0_burstcount(avm_io_burstcount),
-      .mem_req_rw(mmio_we),
-      .maddr(mmio_addr),
-      .byteenable(mmio_byteenable),
-      .write_data(mmio_wdata),
-      .read_data(mmio_data),
-      .mem_done(mmio_done)
-            );
-
-   avalon_sdr sdr_d(
-      .clk(clk),
-      .reset(~reset_x),
-      .avm_m0_write(avm_d_write),
-      .avm_m0_writedata(avm_d_writedata),
-      .avm_m0_read(avm_d_read),
-      .avm_m0_address(avm_d_address),
-      .avm_m0_readdata(avm_d_readdata),
-      .avm_m0_readdatavalid(avm_d_readdatavalid),
-      .avm_m0_waitrequest(1'b0),
-      .mem_req_rw(dmem_we),
-      .maddr(dmem_addr),
-      .byteenable(dmem_byteenable),
-      .write_data(dmem_wdata),
-      .read_data(dmem_data),
-      .mem_done(dmem_done)
-            );
-
-   dmem datamemory(
-		   .clk(clk),
-		   .addr(avm_d_address),
-		   .wdata(avm_d_writedata),
-		   .we({avm_d_write, avm_d_read}),
-		   .rdata(avm_d_readdata),
-           .done(avm_d_readdatavalid)
-		   );
-
-  apb4_plic_top #(
-    //PLIC Parameters
-    .SOURCES           ( SOURCES ),
-    .TARGETS           ( TARGETS ),
-    .PRIORITIES        ( PRIORITIES ),
-    .MAX_PENDING_COUNT ( MAX_PENDING_COUNT ),
-    .HAS_THRESHOLD     ( HAS_THRESHOLD ),
-    .HAS_CONFIG_REG    ( HAS_CONFIG_REG )
-  )
-  plic (
-    .rst_n    ( reset_x         ), //Active low asynchronous reset
-    .clk      ( clk             ), //System clock
-
-    .we       ( (avm_io_address[9:8] == 2'b00) ? avm_io_write : 1'b0 ), //write cycle
-    .re       ( (avm_io_address[9:8] == 2'b00) ? avm_io_read  : 1'b0 ), //read cycle
-    .PADDR    ( {24'h0, avm_io_address[7:0]}       ), //address
-    .PSTRB    ( 4'b1111                            ), //PSTRB=byte-enables
-    .PWDATA   ( avm_io_writedata                   ), //write data
-    .PRDATA   ( avm_io_readdata_plic               ), //read data
-
-    .src      ( src                                ), //Interrupt sources
-    .irq      ( irq                                )  //Interrupt Requests
- );
-
-   always @ (posedge clk) begin
-      if (avm_io_write || avm_io_read) begin
-         avm_io_readdatavalid <= 1;
-      end
-      else
-         avm_io_readdatavalid <= 0;
-   end
-
-   soc_system qsys(
-       .clk_clk(clk),
-       .reset_reset_n(reset_x),
-       .ps2_0_avalon_ps2_slave_address(avm_io_address[2]),
-       .ps2_0_avalon_ps2_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[9:8] == 2'b10),
-       .ps2_0_avalon_ps2_slave_byteenable(4'b0001),
-       .ps2_0_avalon_ps2_slave_read(avm_io_read),
-       .ps2_0_avalon_ps2_slave_write(avm_io_write),
-       .ps2_0_avalon_ps2_slave_writedata(avm_io_writedata),
-       .ps2_0_avalon_ps2_slave_readdata(avm_io_readdata_keyboard),
-       //.ps2_0_avalon_ps2_slave_waitrequest(),
-       .ps2_0_external_interface_CLK(ps2_clk),
-       .ps2_0_external_interface_DAT(ps2_data),
-       .ps2_0_interrupt_irq(src[6]),
-
-       .rs232_0_avalon_rs232_slave_address(avm_io_address[2]),
-       .rs232_0_avalon_rs232_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[9:8] == 2'b11),
-       .rs232_0_avalon_rs232_slave_byteenable(4'b0001),
-       .rs232_0_avalon_rs232_slave_read(avm_io_read),
-       .rs232_0_avalon_rs232_slave_write(avm_io_write),
-       .rs232_0_avalon_rs232_slave_writedata(avm_io_writedata),
-       .rs232_0_avalon_rs232_slave_readdata(avm_io_readdata_uart),
-       //.rs232_0_avalon_rs232_slave_waitrequest(),
-       .rs232_0_external_interface_RXD(rs232_rxd),
-       .rs232_0_external_interface_TXD(rs232_txd),
-       .rs232_0_interrupt_irq(src[5])
-   );
-
+		.irq_ps2              (ridecore_0_irqps2_export),                    //             irqps2.export
+		.irq_rs232            (ridecore_0_irqrs232_export)                   //           irqrs232.export
+	);
 /*
-   cache icache(
-            .CLK(clk),
-            .RST(~reset_x),
-            .rw_flag_(rw_flag_),
-            .addr_(pc),
-            .read_data(idata),
-            .busy(icache_busy),
-            .done(icache_done),
-            .mem_rw_flag(imem_we),
-            .mem_addr(imem_addr),
-            .mem_read_data(imem_data),
-            .mem_done(imem_done)
-      );*/
-
    //dm_cache_fsm icache(
    dm_cache_pl icache(
         .clk(clk),
-        .rst(~reset_x), 
+        .rst(~reset_n), 
         .cpu_req_addr(pc),
         .cpu_req_data(32'h0),
         .cpu_req_funct3(3'b010),
@@ -269,10 +207,10 @@ module top #(
         .cpu_res_ready(icache_done),
         .busy(icache_busy)
    );
- 
+
    avalon_sdr sdr_i(
       .clk(clk),
-      .reset(~reset_x),
+      .reset(~reset_n),
       .avm_m0_read(avm_i_read),
       .avm_m0_address(avm_i_address),
       .avm_m0_readdata(avm_i_readdata),
@@ -284,13 +222,117 @@ module top #(
       .read_data(imem_data),
       .mem_done(imem_done)
       );
+*/
+
+wire [127:0] avm_i_readdata_ram;
+wire [127:0] avm_d_readdata_ram;
+
+iram iram_ (
+	.address ( avm_i_address[15:4] ),
+	.clock ( clk ),
+	.data ( 128'd0 ),
+	.rden ( avm_i_read ),
+	.wren ( 1'b0 ),
+	.q ( avm_i_readdata )
+	);
+
    imem_ld instmemory(
 		      .clk(clk),
 		      .addr(avm_i_address[12:4]),
-		      .rdata(avm_i_readdata),
-		      .we({1'b0, avm_i_read}),
-		      .done(avm_i_readdatavalid)
+		      .rdata(avm_i_readdata_ram),
+		      .we({1'b0, avm_i_read})
+		      //.done(avm_i_readdatavalid)
 		      );
+
+/*
+   avalon_sdr sdr_d(
+      .clk(clk),
+      .reset(~reset_n),
+      .avm_m0_write(avm_d_write),
+      .avm_m0_writedata(avm_d_writedata),
+      .avm_m0_read(avm_d_read),
+      .avm_m0_address(avm_d_address),
+      .avm_m0_readdata(avm_d_readdata),
+      .avm_m0_readdatavalid(avm_d_readdatavalid),
+      .avm_m0_waitrequest(1'b0),
+      .mem_req_rw(dmem_we),
+      .maddr(dmem_addr),
+      .byteenable(dmem_byteenable),
+      .write_data(dmem_wdata),
+      .read_data(dmem_data),
+      .mem_done(dmem_done)
+            );
+*/
+
+ram	dram (
+	.address ( avm_d_address[15:4] ),
+	.clock ( clk ),
+	.data ( avm_d_writedata ),
+	.rden ( avm_d_read ),
+	.wren ( avm_d_write ),
+	.q ( avm_d_readdata )
+	);
+
+   dmem datamemory(
+		   .clk(clk),
+		   .addr(avm_d_address),
+		   .wdata(avm_d_writedata),
+		   .we({avm_d_write, avm_d_read}),
+		   .rdata(avm_d_readdata_ram)
+           //.done(avm_d_readdatavalid)
+		   );
+
+/*
+   avalon_sdr sdr_io(
+      .clk(clk),
+      .reset(~reset_n),      
+      .avm_m0_write(avm_io_write),
+      .avm_m0_writedata(avm_io_writedata),
+      .avm_m0_read(avm_io_read),
+      .avm_m0_address(avm_io_address),
+      .avm_m0_readdata(avm_io_readdata),
+      .avm_m0_readdatavalid(avm_io_readdatavalid),
+      // .avm_m0_byteenable(avm_io_byteenable),
+      // .avm_m0_waitrequest(avm_io_waitrequest),
+      .avm_m0_waitrequest(1'b0),
+      // .avm_m0_burstcount(avm_io_burstcount),
+      .mem_req_rw(mmio_we),
+      .maddr(mmio_addr),
+      .byteenable(mmio_byteenable),
+      .write_data(mmio_wdata),
+      .read_data(mmio_data),
+      .mem_done(mmio_done)
+            );
+*/
+   soc_system qsys(
+       .clk_clk(clk),
+       .reset_reset_n(reset_n),
+
+       .ps2_0_avalon_ps2_slave_address(avm_io_address[2]),
+       .ps2_0_avalon_ps2_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[31:8] == 24'h4002_00),
+       .ps2_0_avalon_ps2_slave_byteenable(4'b0001),
+       .ps2_0_avalon_ps2_slave_read(avm_io_read),
+       .ps2_0_avalon_ps2_slave_write(avm_io_write),
+       .ps2_0_avalon_ps2_slave_writedata(avm_io_writedata),
+       .ps2_0_avalon_ps2_slave_readdata(avm_io_readdata_keyboard),
+       //.ps2_0_avalon_ps2_slave_waitrequest(),
+       .ps2_0_external_interface_CLK(ps2_clk),
+       .ps2_0_external_interface_DAT(ps2_data),
+       .ps2_0_interrupt_irq(ridecore_0_irqps2_export),
+
+       .rs232_0_avalon_rs232_slave_address(avm_io_address[2]),
+       .rs232_0_avalon_rs232_slave_chipselect((avm_io_write || avm_io_read) && avm_io_address[31:8] == 24'h4002_01),
+       .rs232_0_avalon_rs232_slave_byteenable(4'b0001),
+       .rs232_0_avalon_rs232_slave_read(avm_io_read),
+       .rs232_0_avalon_rs232_slave_write(avm_io_write),
+       .rs232_0_avalon_rs232_slave_writedata(avm_io_writedata),
+       .rs232_0_avalon_rs232_slave_readdata(avm_io_readdata_uart),
+       //.rs232_0_avalon_rs232_slave_waitrequest(),
+       .rs232_0_external_interface_RXD(rs232_rxd),
+       .rs232_0_external_interface_TXD(rs232_txd),
+       .rs232_0_interrupt_irq(ridecore_0_irqrs232_export)
+   );
+
 endmodule // top
 
-   
+`default_nettype wire

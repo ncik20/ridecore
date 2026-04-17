@@ -1,6 +1,11 @@
 import cache_def::*;
+
+`timescale 1 ns/ 1 ps
 /*cache:data memory, single port, 1024 blocks*/
-module dm_cache_data_pl(
+module dm_cache_data_pl #(
+  parameter DATA_DEPTH      = 1024
+)
+        (
         input   logic               clk,
 		input   cache_req_type      data_req1,      //data request/command, e.g. RW, valid
 		input   cache_req_type      data_req2,      //
@@ -14,7 +19,7 @@ module dm_cache_data_pl(
 
 	//timeunit 1ns; timeprecision 1ps;
 
-	reg [127:0] data_mem[0:511];
+	reg [127:0] data_mem[0:DATA_DEPTH-1];
 
 /*	initial begin
 		for (int i=0; i<512; i++)
@@ -40,7 +45,10 @@ module dm_cache_data_pl(
 endmodule
 
 /*cache:tag memory, single port, 1024 blocks*/
-module dm_cache_tag_pl(
+module dm_cache_tag_pl #(
+  parameter DATA_DEPTH      = 1024
+)
+        (
         input   logic               clk,
         input   logic               rst,
 		input   cache_req_type      tag_req1,		//tag request/command, e.g. RW, valid
@@ -69,15 +77,15 @@ module dm_cache_tag_pl(
 	end
 */
 
-	logic tag_mem_valid[0:511];
-	logic tag_mem_dirty[0:511];
-	logic [TAGMSB:TAGLSB] tag_mem[0:511];
+	logic tag_mem_valid[0:DATA_DEPTH-1];
+	logic tag_mem_dirty[0:DATA_DEPTH-1];
+	logic [TAGMSB:TAGLSB] tag_mem[0:DATA_DEPTH-1];
     // cache_tag_type tag_mem[0:511];
 
     integer i;
 	always_ff @(posedge(clk)) begin
         if (rst) begin
-		    for (int i=0; i<512; i++) begin
+		    for (int i=0; i<DATA_DEPTH; i++) begin
 		        tag_mem_valid[i] <= '0;
                 // tag_mem[i] <= '0;
 		    end
@@ -139,8 +147,8 @@ module dm_cache_pl(input logic clk, input logic rst,
     //reg [31:0]  pending_req_addr;
     //wire rw_flag = busy ? pending_rw_flag : cpu_req_rw;
     //wire [31:0] req_addr = busy ? pending_req_addr : cpu_req_addr;
-    logic               icache_done_at_stage2;
-    logic               icache_done_at_stage3;
+    //logic               icache_done_at_stage2;
+    //logic               icache_done_at_stage3;
 
     logic               accept_req;
     logic               req_kill_latch;
@@ -196,9 +204,9 @@ module dm_cache_pl(input logic clk, input logic rst,
 	assign mem_req_rw = v_mem_req.rw;
 	assign mem_req_valid = v_mem_req.valid;
 
-	assign cpu_res_data = v_cpu_res.data;
-	assign cpu_res_ready = v_cpu_res.ready;
-
+	// assign #0.1 cpu_res_data = v_cpu_res.data;
+	// assign #0.1 cpu_res_ready = v_cpu_res.ready;
+/*
     function automatic [31:0] store_b;
         input [1:0]     addr;
         input [31:0]    org_word;
@@ -270,8 +278,11 @@ module dm_cache_pl(input logic clk, input logic rst,
         return data_write;
 
     endfunction : get_data_write
+*/
 
-    assign accept_req = cpu_req_valid && ~cpu_req_kill; //&& ((|v_cpu_res.ready) || ~busy);
+    // assign accept_req = cpu_req_valid && ~cpu_req_kill; //&& ((|v_cpu_res.ready) || ~busy);
+    assign accept_req = cpu_req_rw ? cpu_req_valid :
+        (cpu_req_valid && ~cpu_req_kill);
 
 	always_ff @(posedge(clk)) begin
         if (rst) begin
@@ -288,6 +299,10 @@ module dm_cache_pl(input logic clk, input logic rst,
 
         end
         else begin
+	        cpu_res_data <= v_cpu_res.data;
+	        cpu_res_ready <= v_cpu_res.ready;
+            cpu_res_pc <= req_addr_stage1;
+
             if (accept_req) begin
                 req_addr_stage1 <= cpu_req_addr;
                 req_data_stage1 <= cpu_req_data;
@@ -295,7 +310,7 @@ module dm_cache_pl(input logic clk, input logic rst,
                 req_rw_stage1 <= cpu_req_rw;
                 req_valid_stage1 <= cpu_req_valid;
             end
-            else if (cpu_req_kill || ((|v_cpu_res.ready) && ~cpu_req_valid)) begin
+            else if ((cpu_req_kill && ~req_rw_stage1) || ((|v_cpu_res.ready) && ~cpu_req_valid)) begin
                 req_addr_stage1 <= '0;
                 req_data_stage1 <= '0;
                 req_funct3_stage1 <= '0;
@@ -318,7 +333,10 @@ module dm_cache_pl(input logic clk, input logic rst,
                 else begin
                     write_back_done <= '0;
 
-                    req_kill_latch <= cpu_req_kill;
+                    if (cpu_req_kill)
+                        req_kill_latch <= 1'b1;
+
+                    // req_kill_latch <= cpu_req_kill;
                 end
             end
             else if (cache_miss) mem_access <= v_mem_req.rw;
@@ -340,13 +358,13 @@ module dm_cache_pl(input logic clk, input logic rst,
 		/*read tag by default*/
 		tag_req1.we = '0;
 		/*direct map index for tag*/
-		tag_req1.index = cpu_req_addr[12:4];
+		tag_req1.index = cpu_req_addr[TAGLSB-1:4];
 		tag_req1.en = '0;
 
 		/*read current cache line by default*/
 		data_req1.we = '0;
 		/*direct map index for cache data*/
-		data_req1.index = cpu_req_addr[12:4];
+		data_req1.index = cpu_req_addr[TAGLSB-1:4];
 		data_req1.en = '0;
 
         // enable tag1, data1 access if have cache req
@@ -359,11 +377,20 @@ module dm_cache_pl(input logic clk, input logic rst,
         end
     end
 
+    reg  [3:0]   mask;
+    wire [31:0]  mask_32 = {{8{mask[3]}},{8{mask[2]}},{8{mask[1]}},{8{mask[0]}}};
+    wire [31:0]  req_data = req_data_stage1;
+    reg  [31:0]  req_data_;
+    reg  [127:0] mask_128;
+    reg  [127:0] req_data_128;
+
+    wire         do_stage2 = req_rw_stage1 ? 1'b1 : ~cpu_req_kill;
+
     // stage2,3
 	always_comb begin
 
-        icache_done_at_stage2 = '0;
-        icache_done_at_stage3 = '0;
+        //icache_done_at_stage2 = '0;
+        //icache_done_at_stage3 = '0;
 
         cache_miss = '0;
 
@@ -371,7 +398,7 @@ module dm_cache_pl(input logic clk, input logic rst,
         data_read = r_from_w ? data_read_ : data_read1;
 
 		tag_req2.we = 1'b1;
-		tag_req2.index = req_addr_stage1[12:4];
+		tag_req2.index = req_addr_stage1[TAGLSB-1:4];
         tag_req2.en = '0;
 
 		/*no change in tag*/
@@ -381,14 +408,57 @@ module dm_cache_pl(input logic clk, input logic rst,
 		tag_write2.dirty = req_rw_stage1;
 
         data_req2.we = 1'b1;
-		data_req2.index = req_addr_stage1[12:4];
+		data_req2.index = req_addr_stage1[TAGLSB-1:4];
         data_req2.en = '0;
 
 	    /*modify correct word(32-bit) based on address*/
-		data_write2 = get_data_write(req_addr_stage1[3:0], req_funct3_stage1,
-            req_data_stage1, data_read);
+        case(req_funct3_stage1)
+            3'b000:begin
+                case(req_addr_stage1[1:0])
+                    2'b00 :begin  req_data_ = {24'h0,req_data[7:0]};      mask = 4'b0001; end
+                    2'b01 :begin  req_data_ = {16'h0,req_data[7:0],8'h0}; mask = 4'b0010; end
+                    2'b10 :begin  req_data_ = {8'h0,req_data[7:0],16'h0}; mask = 4'b0100; end
+                    default:begin req_data_ = {req_data[7:0],24'h0};      mask = 4'b1000; end
+                endcase
+            end
+            3'b001:begin
+                case(req_addr_stage1[1:0])
+                    2'b00 :begin  req_data_ = {16'h0,req_data[15:0]}; mask = 4'b0011; end
+                    2'b10 :begin  req_data_ = {req_data[15:0],16'h0}; mask = 4'b1100; end
+                    default:begin req_data_ = req_data;               mask = 4'b1111; end
+                endcase
+            end
+            default:begin
+                req_data_ = req_data;
+                mask = 4'b1111;
+            end
+        endcase
 
-        cpu_res_pc = req_addr_stage1;
+        case(req_addr_stage1[3:2])
+            2'b00:begin
+                req_data_128 = {96'h0,req_data_};
+                mask_128     = {96'h0,mask_32};
+            end
+            2'b01:begin
+                req_data_128 = {64'h0,req_data_,32'h0};
+                mask_128     = {64'h0,mask_32,  32'h0};
+            end
+            2'b10:begin
+                req_data_128 = {32'h0,req_data_,64'h0};
+                mask_128     = {32'h0,mask_32,  64'h0};
+            end
+            default:begin
+                req_data_128 = {req_data_,96'h0};
+                mask_128     = {mask_32,  96'h0};
+            end 
+        endcase
+
+        data_write2 = (data_read & ~mask_128) | req_data_128;
+
+		// data_write2 = get_data_write(req_addr_stage1[3:0], req_funct3_stage1,
+        //     req_data_stage1, data_read);
+
+        // cpu_res_pc = req_addr_stage1;
         v_cpu_res.data = data_read;
         v_cpu_res.ready = '0;
 
@@ -401,7 +471,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 		v_mem_req.valid = '0;
 
         // if (~mem_access && ~cpu_req_kill && req_valid_stage1) begin
-        if (~|mem_access && ~cpu_req_kill && req_valid_stage1) begin
+        if (~|mem_access && do_stage2 && req_valid_stage1) begin
 		    /*cache hit (tag match and cache entry is valid)*/
 		    if (req_addr_stage1[TAGMSB:TAGLSB] == tag_read.tag && tag_read.valid) begin
 			    /*write hit*/
@@ -413,7 +483,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 	                v_cpu_res.ready = 2'd2;
 	            end else begin 
 	                v_cpu_res.ready = 2'd1;
-                    icache_done_at_stage2 = 1'b1;
+                    //icache_done_at_stage2 = 1'b1;
 	            end
 	        end
 	        /*cache miss*/
@@ -457,14 +527,15 @@ module dm_cache_pl(input logic clk, input logic rst,
 
             if (req_rw_stage1) begin
                 /*modify correct word(32-bit) based on address*/
-                data_write2 = get_data_write(req_addr_stage1[3:0], req_funct3_stage1,
-                    req_data_stage1, mem_data_data);
+                data_write2 = (mem_data_data & ~mask_128) | req_data_128;
+                // data_write2 = get_data_write(req_addr_stage1[3:0], req_funct3_stage1,
+                //     req_data_stage1, mem_data_data);
 
                 v_cpu_res.ready = 2'd2;
             end else begin 
                 data_write2 = mem_data_data;
                 if (~cpu_req_kill && ~req_kill_latch) v_cpu_res.ready = 2'd1;
-                icache_done_at_stage3 = 1'b1;
+                //icache_done_at_stage3 = 1'b1;
             end
 
             /*read/modify cache line*/
@@ -474,7 +545,7 @@ module dm_cache_pl(input logic clk, input logic rst,
     end
 
 	/*connect cache tag/data memory*/
-	dm_cache_tag_pl ctag(
+	dm_cache_tag_pl #(1024) ctag(
 		.clk                (clk),
         .rst                (rst),
 		.tag_req1           (tag_req1),
@@ -483,7 +554,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 		.tag_read1          (tag_read1)
 		);
 
-    ram_sync_1r1w #(9, 128, 512) cdata(
+    ram_sync_1r1w #(TAGLSB-4, 128, 1024) cdata(
 		.clk            (clk),
         .raddr1         (data_req1.index),
         .rdata1         (data_read1),

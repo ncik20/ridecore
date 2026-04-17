@@ -30,19 +30,19 @@ module rrf(
 	   input wire [`RRF_SEL-1:0]   wrrfaddr3,
 	   input wire [`RRF_SEL-1:0]   wrrfaddr4,
 	   input wire [`RRF_SEL-1:0]   wrrfaddr5,
-	   input wire [`RRF_SEL-1:0]   wrrfaddr6,
+	   // input wire [`RRF_SEL-1:0]   wrrfaddr6,
 	   input wire [`DATA_LEN-1:0]  wrrfdata1,
 	   input wire [`DATA_LEN-1:0]  wrrfdata2,
 	   input wire [`DATA_LEN-1:0]  wrrfdata3,
 	   input wire [`DATA_LEN-1:0]  wrrfdata4,
 	   input wire [`DATA_LEN-1:0]  wrrfdata5,
-	   input wire [`DATA_LEN-1:0]  wrrfdata6,
+	   // input wire [`DATA_LEN-1:0]  wrrfdata6,
 	   input wire 		       wrrfen1,
 	   input wire 		       wrrfen2,
 	   input wire 		       wrrfen3,
 	   input wire 		       wrrfen4,
 	   input wire 		       wrrfen5,
-	   input wire 		       wrrfen6,
+	   // input wire 		       wrrfen6,
 	   input wire [`RRF_SEL-1:0]   dpaddr1,
 	   input wire [`RRF_SEL-1:0]   dpaddr2,
 	   input wire 		       dpen1,
@@ -74,9 +74,9 @@ module rrf(
 				       (~wrrfen4 ? `RRF_NUM'b0 : 
 					(`RRF_NUM'b1 << wrrfaddr4)) |
 				       (~wrrfen5 ? `RRF_NUM'b0 : 
-					(`RRF_NUM'b1 << wrrfaddr5)) |
-				       (~wrrfen6 ? `RRF_NUM'b0 : 
-					(`RRF_NUM'b1 << wrrfaddr6));
+					(`RRF_NUM'b1 << wrrfaddr5));
+//				       (~wrrfen6 ? `RRF_NUM'b0 : 
+//					(`RRF_NUM'b1 << wrrfaddr6));
    
    wire [`RRF_NUM-1:0] 		       and_valid = 
 				       (~dpen1 ? ~(`RRF_NUM'b0) : 
@@ -104,8 +104,8 @@ module rrf(
 	   datarr[wrrfaddr4] <= wrrfdata4;
 	 if (wrrfen5)
 	   datarr[wrrfaddr5] <= wrrfdata5;
-	 if (wrrfen6)
-	   datarr[wrrfaddr6] <= wrrfdata6;
+//	 if (wrrfen6)
+//	   datarr[wrrfaddr6] <= wrrfdata6;
 
       end
    end
