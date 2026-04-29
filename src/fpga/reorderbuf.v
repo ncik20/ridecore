@@ -107,8 +107,8 @@ module reorderbuf
    // wire [`ADDR_LEN-1:0] 	  irq_jmpaddr;
 
 
-   wire hidp_comptr = (comptr_latch > comptr) ? 1'b1 : 1'b0;
-   wire [1:0] last_commit_count = ({hidp_comptr, comptr} - {1'b0, comptr_latch});
+   // wire hidp_comptr = (comptr_latch > comptr) ? 1'b1 : 1'b0;
+   // wire [1:0] last_commit_count = ({hidp_comptr, comptr} - {1'b0, comptr_latch});
 
    assign comptr2 = comptr + 1;
    assign comptr_latch2 = comptr_latch + 1;

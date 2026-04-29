@@ -83,13 +83,13 @@ module top #(
 
    reg  [31:0]              io_address;
 
-   assign avm_io_readdata = (io_address[9:8] == 2'b00) ? avm_io_readdata_keyboard :
-                            (io_address[9:8] == 2'b01) ? avm_io_readdata_uart : 128'd0;
-
    reg iram_read;
    reg dram_read;
 
    // reg  [7:0]               led_out;
+
+   assign avm_io_readdata = (io_address[31:8] == 24'h4002_00) ? avm_io_readdata_keyboard :
+                            (io_address[31:8] == 24'h4002_01) ? avm_io_readdata_uart : 128'd0;
 
    always @ (posedge clk) begin
       if (!reset_n) begin

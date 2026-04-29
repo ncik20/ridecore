@@ -107,6 +107,14 @@ module decoder(
            wr_reg = 1'b1;
 	   rs_ent = `RS_ENT_JALR;
         end
+        `RV32_MISC_MEM : begin
+           uses_rs1 = 1'b0;
+           case (funct3)
+             `RV32_FUNCT3_FENCE   : alu_op = `FENCE;
+             `RV32_FUNCT3_FENCE_I : alu_op = `FENCE_I;
+             default : illegal_instruction = 1'b1;
+           endcase // case (funct3)
+        end
 	/*
         `RV32_MISC_MEM : begin
            case (funct3)

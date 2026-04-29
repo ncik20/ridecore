@@ -5,6 +5,7 @@ module exunit_alu
   (
    input wire 			     clk,
    input wire 			     reset,
+   input wire 			     irq_flush,
    input wire [`DATA_LEN-1:0] 	     ex_src1,
    input wire [`DATA_LEN-1:0] 	     ex_src2,
    input wire [`ADDR_LEN-1:0] 	     pc,
@@ -21,23 +22,30 @@ module exunit_alu
    output wire [`DATA_LEN-1:0] 	     result,
    output wire 			     rrf_we,
    output wire 			     rob_we, //set finish
-   output wire 			     kill_speculative
+   output wire 			     kill_speculative,
+   input  wire               fence_done
    );
 
    wire [`DATA_LEN-1:0] 	alusrc1;
    wire [`DATA_LEN-1:0] 	alusrc2;
 
    reg 				busy;
+   wire 			clearbusy;
+   wire 			busy_next;
 
-   assign rob_we = busy;
+   wire is_fence = (alu_op == `FENCE) ? 1'b1 : 1'b0;
+   assign clearbusy = (kill_speculative || ~is_fence || fence_done) ? 1'b1 : 1'b0;
+   assign busy_next = clearbusy ? 1'b0 : busy;
+
+   assign rob_we = busy & ~kill_speculative & (~is_fence | fence_done);
    assign rrf_we = busy & dstval;
    assign kill_speculative = ((spectag & spectagfix) != 0) && specbit && prmiss;
    
    always @ (posedge clk) begin
-      if (reset) begin
-	 busy <= 0;
+      if (reset || kill_speculative || irq_flush) begin
+	    busy <= 0;
       end else begin
-	 busy <= issue;
+	    busy <= issue | busy_next;
       end
    end
    

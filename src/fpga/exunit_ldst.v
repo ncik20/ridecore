@@ -213,16 +213,16 @@ module exunit_ldst
     ((funct3 == 3'b001 || funct3 == 3'b101) && ldst_and != 4'b1100 && ldst_and != 4'b0011) ||
     (funct3 == 3'b010 && ldst_and != 4'b1111) || ld_io;
 
-   assign sb_ld_ok = hitsb && ~must_read_mem;
+   assign sb_ld_ok = hitsb & ~must_read_mem;
 
    //assign lddata = sb_ld_ok ? lddatasb : (ld_io || ~hitsb) ? mem_data : lddatasbmen;
    assign lddata = (ld_io || ~hitsb) ? mem_data : lddatasbmen;
 
-   assign ld_ok = dstval && (sb_ld_ok || cache_done);
+   assign ld_ok = dstval & (sb_ld_ok | cache_done);
    assign clearbusy = (killspec1 || ld_ok || (~dstval && ~fullsb)) ? 1'b1 : 1'b0;
-   assign killspec1 = ((spectag & spectagfix) != 0) && specbit && prmiss;
-   assign kill_speculative = ((spectag_latch & spectagfix) != 0) && specbit_latch && prmiss;
-   assign kill_ld_req = busy && killspec1;
+   assign killspec1 = ((spectag & spectagfix) != 0) & specbit & prmiss;
+   assign kill_speculative = ((spectag_latch & spectagfix) != 0) & specbit_latch & prmiss;
+   assign kill_ld_req = busy & killspec1;
    //assign result_lb = (hitsb_latch && ~ld_io_latch) ? lddatasb_latch[7:0] :
    //    lddatamem_latch[7:0];
 

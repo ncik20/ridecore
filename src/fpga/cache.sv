@@ -138,7 +138,8 @@ module dm_cache_pl(input logic clk, input logic rst,
         output logic [31:0]cpu_res_pc,
 		output logic [127:0]cpu_res_data,		//128-bit data
 		output logic [1:0]cpu_res_ready,		//result : 0 = not ready, 1 = read ready, 2 = write ready
-        output logic busy
+        output logic busy,
+        output logic idle
 	);
 
 	//timeunit 1ns; timeprecision 1ps;
@@ -197,6 +198,7 @@ module dm_cache_pl(input logic clk, input logic rst,
 	assign cpu_res = v_cpu_res;*/
 
     assign busy = cache_miss | (|mem_access);
+    assign idle = ~(accept_req | req_valid_stage1);
 
 	assign mem_req_addr = v_mem_req.addr;
 	assign mem_req_data = v_mem_req.data;

@@ -14,3 +14,6 @@
 `define ALU_OP_SGE  `ALU_OP_WIDTH'd13
 `define ALU_OP_SLTU `ALU_OP_WIDTH'd14
 `define ALU_OP_SGEU `ALU_OP_WIDTH'd15
+
+`define FENCE       `ALU_OP_WIDTH'd2
+`define FENCE_I     `ALU_OP_WIDTH'd3

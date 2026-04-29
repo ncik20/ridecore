@@ -22,6 +22,7 @@ module storebuf
    output wire [`MEM_TYPE_WIDTH-1:0] 				 retfunct3,
    input wire 			 stretire_en,
    output wire 			 sb_full,
+   output wire 			 sb_empty,
    // ReadSigs
    // input wire[1:0] dmem_w_done,
    input wire cache_busy,
@@ -101,7 +102,8 @@ module storebuf
    // 以上是针对原始ridecore的做法的注释
    // assign stretire = valid[retptr] && completed[retptr] && ~memoccupy_ld && ~(dmem_w_done[1]) && ~prmiss;
    assign stretire = valid[retptr] && completed[retptr] && ~prmiss;
-   assign sb_full = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
+   assign sb_full  = ((finptr == retptr) && (valid[finptr] == 1)) ? 1'b1 : 1'b0;
+   assign sb_empty = ((finptr == retptr) && (valid[finptr] == 0)) ? 1'b1 : 1'b0;
    assign finptr_next = (~notfull_next | ~notempty_next) ? finptr :
 			(((nb1 == 0) && (ne1 == `STBUF_ENT_NUM-1)) ? nb0 : (ne1+1));
    assign vecshamt = (`STBUF_ENT_NUM - finptr);

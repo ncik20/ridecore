@@ -470,6 +470,7 @@ module pipeline
    wire 		       busy_next_ldst;
 
    wire 		       sb_full;
+   wire                sb_empty;
    wire 		       hitsb;
    wire 		       memoccupy_ld;
    wire [`ADDR_LEN-1:0]        ldaddr;
@@ -525,30 +526,29 @@ module pipeline
    reg 			       buf_specbit_csr;
 
    //BRANCH
-   wire 		       prmiss;
-   wire 		       prsuccess;
-   wire [`ADDR_LEN-1:0]        jmpaddr;
-   wire [`ADDR_LEN-1:0]        jmpaddr_taken;
-   // reg  [`ADDR_LEN-1:0]        jmpaddr_latch;
-   wire 		       brcond;
-   wire [`SPECTAG_LEN-1:0]     tagregfix;
+   wire 		                prmiss;
+   wire 		                prsuccess;
+   wire [`ADDR_LEN-1:0]         jmpaddr;
+   wire [`ADDR_LEN-1:0]         jmpaddr_taken;
+   wire 		                brcond;
+   wire [`SPECTAG_LEN-1:0]      tagregfix;
    
-   wire [`DATA_LEN-1:0]        result_branch;
-   wire 		       rrfwe_branch;
-   wire 		       robwe_branch;
+   wire [`DATA_LEN-1:0]         result_branch;
+   wire 		                rrfwe_branch;
+   wire 		                robwe_branch;
    
-   reg [`DATA_LEN-1:0] 	       buf_ex_src1_branch;
-   reg [`DATA_LEN-1:0] 	       buf_ex_src2_branch;
-   reg [`ADDR_LEN-1:0] 	       buf_pc_branch;
-   reg [`DATA_LEN-1:0] 	       buf_imm_branch;
-   reg [`RRF_SEL-1:0] 	       buf_rrftag_branch;
-   reg 			       buf_dstval_branch;
-   reg [`ALU_OP_WIDTH-1:0]     buf_alu_op_branch;
-   reg [`SPECTAG_LEN-1:0]      buf_spectag_branch;
-   reg 			       buf_specbit_branch;
-   reg [`ADDR_LEN-1:0] 	       buf_praddr_branch;
-   reg [6:0] 		       buf_opcode_branch;
-   reg [`REG_SEL-1:0] 	   buf_dst_branch;
+   reg [`DATA_LEN-1:0] 	        buf_ex_src1_branch;
+   reg [`DATA_LEN-1:0] 	        buf_ex_src2_branch;
+   reg [`ADDR_LEN-1:0] 	        buf_pc_branch;
+   reg [`DATA_LEN-1:0] 	        buf_imm_branch;
+   reg [`RRF_SEL-1:0] 	        buf_rrftag_branch;
+   reg 			                buf_dstval_branch;
+   reg [`ALU_OP_WIDTH-1:0]      buf_alu_op_branch;
+   reg [`SPECTAG_LEN-1:0]       buf_spectag_branch;
+   reg 			                buf_specbit_branch;
+   reg [`ADDR_LEN-1:0] 	        buf_praddr_branch;
+   reg [6:0] 		            buf_opcode_branch;
+   reg [`REG_SEL-1:0] 	        buf_dst_branch;
    
    //miss prediction fix table
    wire [`SPECTAG_LEN-1:0] mpft_valid;
@@ -572,11 +572,8 @@ module pipeline
    wire [`ADDR_LEN-1:0]    jmpaddr_combranch;
 
    wire [`ADDR_LEN-1:0]        retaddr;
-   // reg  [`ADDR_LEN-1:0]        retaddr_mmio_latch;
    wire [`DATA_LEN-1:0]        retdata;
-   // reg  [`DATA_LEN-1:0]        retdata_mmio_latch;
    wire [`MEM_TYPE_WIDTH-1:0]  retfunct3;
-   // reg  [`MEM_TYPE_WIDTH-1:0]  retfunct3_mmio_latch;
 
     wire [1:0]                  cpu_res_ready;
     wire [1:0]                  mmio_res_ready;
@@ -593,6 +590,7 @@ module pipeline
     wire                        dcache_r_req;
     wire                        dcache_w_req;
     wire                        dcache_busy;
+    wire                        dcache_idle;
 
     reg                         mmio_r_req_en;
     wire                        mmio_w_req_en;
@@ -622,29 +620,29 @@ module pipeline
 	wire                        ecall;
 	wire                        ebreak;
 
+    reg                         fence;
+    reg                         isfence1_latch;
+    wire                        isfence1;
+    wire                        isfence2;
+    wire                        inv2_if_;
+    wire [`RRF_SEL-1:0]         comptr_;
+    wire                        all_commit;
+    wire                        fence_done;
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
 
-   // idata_ok与新req要区分开？
-   // assign idata_ok = icache_done & icache_busy;
-   
-   // assign icache_req_ok = icache_done | ~icache_busy;
-   // assign dcache_req_ok = (|cpu_res_ready) | ~dcache_busy;
    assign icache_req_ok = ~icache_busy;
    assign dcache_req_ok = ~dcache_busy;
 
-   // assign mmio_data_ok = (|mmio_res_ready) && mmio_busy;
    assign mmio_req_ok = ~mmio_busy;
 
-   // assign stall_IF = stall_ID | stall_DP | ~idata_ok;
-   assign stall_IF = stall_ID | stall_DP;
+   assign stall_IF = stall_ID | stall_DP | isfence1 | isfence2 | fence;
 
-   // assign irq_flush = irq & mie & idata_ok;
-   assign irq_flush = icache_req_ok && mstatus_mie && (
-       (mie[11] && eirq) || (mie[7] && tirq) || (mie[3] && sirq));
+   assign irq_flush = icache_req_ok & mstatus_mie & (
+       (mie[11] & eirq) || (mie[7] & tirq) || (mie[3] & sirq));
 
-   // assign kill_IF = prmiss | jmpaddr_is_latch | irq_flush;
    assign kill_IF = prmiss | irq_flush;
    assign kill_icache_req = kill_IF;
 
@@ -764,18 +762,18 @@ module pipeline
 	    instype2_if <= instype2;
         inst_in_sameLine_if <= inst_in_sameLine;
      end
+     else if (~(stall_ID || stall_DP)) begin    // not (stall_ID || stall_DP)
+                                                // but (isfence1 | isfence2 | fence)
+        if (isfence1 || isfence1_latch)         // 如果第一条指令是fence
+                                                // 提交后应继续执行第二条指令
+                                                // 所以这里只设置第一条指令无效 
+            inv1_if <= 1;
+        else begin
+            inv1_if <= 1;
+            inv2_if <= 1;
+        end
+     end
 /*
-      end else if (read_iBuf) begin
-
-        prcond_if <= iBuf_r_data[5];
-        npc_if <= iBuf_r_data[79-:32];
-        pc_if <= iBuf_r_data[47-:32];
-        inst1_if <= iBuf_r_data[111-:32];
-        inst2_if <= iBuf_r_data[143-:32];
-        inv1_if <= 0;
-        inv2_if <= iBuf_r_data[4];
-        bhr_if <= iBuf_r_data[15-:10];
-
       end else if (~(stall_ID || stall_DP)) begin       // 1）为什么要在此设置2条指令为invalid
                                                         // 没有取到数据，需要等待，此时如果
                                                         // ID，DP没有STALL，那就会
@@ -811,14 +809,21 @@ module pipeline
    end // always @ (posedge clk)
 
    //ID Stage********************************************************
-//   assign stall_ID = stall_DP | ~attachable | (prsuccess & (isbranch1 | isbranch2));
-//   assign kill_ID = prmiss;
    assign stall_ID = ~attachable | prsuccess;
    assign kill_ID = (stall_ID & ~stall_DP) | prmiss | irq_flush;
-   
+
+   assign isfence1 = (~inv1_if && (inst1_if[6:0] == `RV32_MISC_MEM)) ?
+		      1'b1 : 1'b0;
+   assign isfence2 = (~inv2_if && (inst2_if[6:0] == `RV32_MISC_MEM)) ?
+		      1'b1 : 1'b0;
+
+   assign inv2_if_ = inv2_if | isfence1 | isfence1_latch;
+
    assign isbranch1 = (~inv1_if && (rs_ent_1 == `RS_ENT_BRANCH)) ?
 		      1'b1 : 1'b0;
-   assign isbranch2 = (~inv2_if && (rs_ent_2 == `RS_ENT_BRANCH)) ?
+   // 如果第一条是fence，第二条是branch，branch指令应该暂时false直到fence结束
+   // 再恢复，否则tag_generator会一直分配
+   assign isbranch2 = (~inv2_if_ && (rs_ent_2 == `RS_ENT_BRANCH)) ?
 		      1'b1 : 1'b0;
    assign prcond1 = isbranch1 & predict_cond1_if;
    // inv2_if已经根据同时发射的第一条指令是否跳转，为前提设置了，所以不需要以下判断
@@ -827,7 +832,32 @@ module pipeline
 
    assign prcond2 = inst_in_sameLine_if ?
        (isbranch2 & predict_cond1_if) : (isbranch2 & predict_cond2_if);
-   
+
+   assign comptr_ = (~prmiss && comnum > 1) ? comptr2 :
+                    (~prmiss && comnum > 0) ? comptr : comptr - 1;
+
+   assign all_commit = ((buf_rrftag_alu1 == comptr_ + 1 && buf_alu_op_alu1 == `FENCE)
+   || (buf_rrftag_alu2 == comptr_ + 1 && buf_alu_op_alu2 == `FENCE)) ? 1'b1 : 1'b0;
+
+   assign fence_done = all_commit & sb_empty & dcache_idle & ~mmio_busy;
+
+   always @ (posedge clk) begin
+
+      if (reset || kill_ID) begin
+		 fence <= 0;
+         isfence1_latch <= 0;
+      end else if (~fence && ~stall_DP) begin
+         if (isfence1)
+            isfence1_latch <= 1;
+
+         if (isfence1 || isfence2)
+            fence <= 1;
+      end else if (fence_done) begin
+		 fence <= 0;
+         isfence1_latch <= 0;
+      end
+   end
+
    tag_generator taggen(
 			.clk(clk),
 			.reset(reset),
@@ -894,7 +924,7 @@ module pipeline
 		);
 
    always @ (posedge clk) begin
-      if (reset | kill_ID) begin
+      if (reset || kill_ID || fence) begin
 	 imm_type_1_id <= 0;
 	 rs1_1_id <= 0;
 	 rs2_1_id <= 0;
@@ -992,7 +1022,7 @@ module pipeline
 	 csr_op_2_id <= csr_op_2;
      // inv2_if已经根据同时发射的第一条指令是否跳转，前提设置了，所以不需要以下判断
 	 // rs_ent_2_id <= (inv2_if || (predict_cond1_if && isbranch1)) ? 0 : rs_ent_2;
-     rs_ent_2_id <= inv2_if ? 0 : rs_ent_2;
+     rs_ent_2_id <= inv2_if_ ? 0 : rs_ent_2;
 	 dmem_size_2_id <= dmem_size_2;
 	 dmem_type_2_id <= dmem_type_2;
 	 md_req_op_2_id <= md_req_op_2;
@@ -1013,7 +1043,7 @@ module pipeline
 	 prcond2_id <= prcond2;
 	 inv1_id <= inv1_if;
 	 // inv2_id <= inv2_if | (prcond_if & isbranch1);
-	 inv2_id <= inv2_if;
+	 inv2_id <= inv2_if_;
 	 /*
 	 praddr1_id <= prcond_if & isbranch1 ? npc_if : pc_if + 4;
 	 praddr2_id <= prcond_if & ~isbranch1 & isbranch2 ?
@@ -1041,7 +1071,7 @@ module pipeline
 
    //Invalidation of specbit when prsuccess(stall)
    always @ (posedge clk) begin
-      if (reset | kill_ID) begin
+      if (reset || kill_ID || fence) begin
 	 spec1_id <= 0;
 	 spec2_id <= 0;
       end else if (prsuccess) begin
@@ -2040,6 +2070,7 @@ module pipeline
    exunit_alu byakko(
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu1),
 		     .ex_src2(buf_ex_src2_alu1),
 		     .pc(buf_pc_alu1),
@@ -2056,7 +2087,8 @@ module pipeline
 		     .result(result_alu1),
 		     .rrf_we(rrfwe_alu1),
 		     .rob_we(robwe_alu1),
-		     .kill_speculative(kill_speculative_alu1)
+		     .kill_speculative(kill_speculative_alu1),
+		     .fence_done(fence_done)
 		     );
 
    always @ (posedge clk) begin
@@ -2090,6 +2122,7 @@ module pipeline
    exunit_alu suzaku(
 		     .clk(clk),
 		     .reset(reset),
+             .irq_flush(irq_flush),
 		     .ex_src1(buf_ex_src1_alu2),
 		     .ex_src2(buf_ex_src2_alu2),
 		     .pc(buf_pc_alu2),
@@ -2106,7 +2139,8 @@ module pipeline
 		     .result(result_alu2),
 		     .rrf_we(rrfwe_alu2),
 		     .rob_we(robwe_alu2),
-		     .kill_speculative(kill_speculative_alu2)
+		     .kill_speculative(kill_speculative_alu2),
+		     .fence_done(fence_done)
 		     );
 
    always @ (posedge clk) begin
@@ -2194,17 +2228,18 @@ module pipeline
 
         .cpu_res_data(cpu_res_data),
         .cpu_res_ready(cpu_res_ready),
-        .busy(dcache_busy)
+        .busy(dcache_busy),
+        .idle(dcache_idle)
    );
 
-   assign dcache_r_req      = dcache_r_req_en && dcache_req_ok && memoccupy_ld;
-   assign mmio_r_req        = mmio_r_req_en && mmio_req_ok && memoccupy_ld;
+   assign dcache_r_req      = dcache_r_req_en & dcache_req_ok & memoccupy_ld;
+   assign mmio_r_req        = mmio_r_req_en & mmio_req_ok & memoccupy_ld;
 
-   assign dcache_w_req_en   = ~retaddr[30] && ~dcache_r_req && dcache_req_ok;
-   assign mmio_w_req_en     = retaddr[30] && ~mmio_r_req && mmio_req_ok;
+   assign dcache_w_req_en   = ~retaddr[30] & ~dcache_r_req & dcache_req_ok;
+   assign mmio_w_req_en     = retaddr[30] & ~mmio_r_req & mmio_req_ok;
 
-   assign dcache_w_req      = dcache_w_req_en && dcache_req_ok && stretire;
-   assign mmio_w_req        = mmio_w_req_en && mmio_req_ok && stretire;
+   assign dcache_w_req      = dcache_w_req_en & dcache_req_ok & stretire;
+   assign mmio_w_req        = mmio_w_req_en & mmio_req_ok & stretire;
 
    assign stretire_en =  retaddr[30] ? mmio_w_req : dcache_w_req_en;
 
@@ -2308,6 +2343,7 @@ module pipeline
       .retfunct3(retfunct3),
       .stretire_en(stretire_en),
       .sb_full(sb_full),
+      .sb_empty(sb_empty),
       //.dmem_w_done(cpu_res_ready),
       .cache_busy(dcache_busy),
       .ldaddr(ldaddr),
@@ -2421,7 +2457,7 @@ module pipeline
 	 buf_specbit_csr <= specbit_csr;
       end
    end
-   
+
    exunit_csr csr_ex (
 		     .clk(clk),
 		     .reset(reset),
