@@ -210,11 +210,11 @@ module ram_sync_2r2w_2bank #(
     // 选择raddr1, raddr2中[0]位是1的地址
     wire [BRAM_ADDR_WIDTH-1:0] raddr2_ = (raddr1[0] == 1) ? raddr1 : raddr2;
 
-    wire [BRAM_ADDR_WIDTH-1:0] waddr1_ = (waddr1[0] == 0) ? waddr1 : waddr2;
-    wire [BRAM_ADDR_WIDTH-1:0] waddr2_ = (waddr1[0] == 1) ? waddr1 : waddr2;
+    wire [BRAM_ADDR_WIDTH-1:0] waddr1_ = (waddr1[0] == 0 && we1) ? waddr1 : waddr2;
+    wire [BRAM_ADDR_WIDTH-1:0] waddr2_ = (waddr1[0] == 1 && we1) ? waddr1 : waddr2;
 
-    wire [BRAM_DATA_WIDTH-1:0] wdata1_ = (waddr1[0] == 0) ? wdata1 : wdata2;
-    wire [BRAM_DATA_WIDTH-1:0] wdata2_ = (waddr1[0] == 1) ? wdata1 : wdata2;
+    wire [BRAM_DATA_WIDTH-1:0] wdata1_ = (waddr1[0] == 0 && we1) ? wdata1 : wdata2;
+    wire [BRAM_DATA_WIDTH-1:0] wdata2_ = (waddr1[0] == 1 && we1) ? wdata1 : wdata2;
 
     wire                       we1_    = ((waddr1[0] == 0 && we1) || (waddr2[0] == 0 && we2)) ? 1'b1 : 1'b0;
     wire                       we2_    = ((waddr1[0] == 1 && we1) || (waddr2[0] == 1 && we2)) ? 1'b1 : 1'b0;

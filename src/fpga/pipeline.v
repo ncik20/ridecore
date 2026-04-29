@@ -565,6 +565,7 @@ module pipeline
    wire 		   arfwe2;
    wire [`REG_SEL-1:0] 	   dstarf1;
    wire [`REG_SEL-1:0] 	   dstarf2;
+   wire [`ADDR_LEN-1:0]    pc_comcsr;
    wire [`ADDR_LEN-1:0]    pc_combranch;
    wire [`GSH_BHR_LEN-1:0] bhr_combranch;
    wire 		   brcond_combranch;
@@ -629,6 +630,11 @@ module pipeline
     wire                        all_commit;
     wire                        fence_done;
 
+    reg                         iscsr_w;
+    wire                        iscsr1;
+    wire                        iscsr2;
+    wire                        csr_flush;
+
    //IF Stage********************************************************
 //   assign stall_IF = stall_ID;
 //   assign kill_IF = prmiss;
@@ -638,12 +644,13 @@ module pipeline
 
    assign mmio_req_ok = ~mmio_busy;
 
-   assign stall_IF = stall_ID | stall_DP | isfence1 | isfence2 | fence;
+   assign stall_IF = stall_ID | stall_DP | 
+       isfence1 | isfence2 | fence | iscsr1 | iscsr2 | iscsr_w;
 
    assign irq_flush = icache_req_ok & mstatus_mie & (
        (mie[11] & eirq) || (mie[7] & tirq) || (mie[3] & sirq));
 
-   assign kill_IF = prmiss | irq_flush;
+   assign kill_IF = prmiss | irq_flush | csr_flush;
    assign kill_icache_req = kill_IF;
 
    assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
@@ -656,12 +663,16 @@ module pipeline
 
    assign icache_req = (icache_req_ok && ~full && ~kill_IF) ? 1'b1 : 1'b0;
 
+   assign csr_flush = iscsr_w & csrcommit;
+
    always @ (posedge clk) begin
 
       if (reset) begin
 		 pc <= `ENTRY_POINT;
       end else if (irq_flush) begin
          pc <= {mtvec[31:2], 2'b0};
+      end else if (csr_flush) begin
+         pc <= pc_comcsr + 4;
       end else if (prmiss) begin
 		 pc <= jmpaddr;
       end else if (~icache_req) begin
@@ -763,7 +774,8 @@ module pipeline
         inst_in_sameLine_if <= inst_in_sameLine;
      end
      else if (~(stall_ID || stall_DP)) begin    // not (stall_ID || stall_DP)
-                                                // but (isfence1 | isfence2 | fence)
+                                                // but (isfence1 | isfence2 | fence
+                                                //      iscsr1 | iscsr2 | iscsr_w)
         if (isfence1 || isfence1_latch)         // 如果第一条指令是fence
                                                 // 提交后应继续执行第二条指令
                                                 // 所以这里只设置第一条指令无效 
@@ -817,7 +829,13 @@ module pipeline
    assign isfence2 = (~inv2_if && (inst2_if[6:0] == `RV32_MISC_MEM)) ?
 		      1'b1 : 1'b0;
 
-   assign inv2_if_ = inv2_if | isfence1 | isfence1_latch;
+   assign iscsr1 = (~inv1_if &&
+       (rs_ent_1 == `RS_ENT_CSR && csr_op_1 != `CSR_READ)) ? 1'b1 : 1'b0;
+   assign iscsr2 = (~inv2_if &&
+       (rs_ent_2 == `RS_ENT_CSR && csr_op_2 != `CSR_READ)) ? 1'b1 : 1'b0;
+
+   // iscsr1的情况，下个cycle，inv2_if自己就会变成1
+   assign inv2_if_ = inv2_if | isfence1 | isfence1_latch | iscsr1;
 
    assign isbranch1 = (~inv1_if && (rs_ent_1 == `RS_ENT_BRANCH)) ?
 		      1'b1 : 1'b0;
@@ -844,17 +862,34 @@ module pipeline
    always @ (posedge clk) begin
 
       if (reset || kill_ID) begin
-		 fence <= 0;
-         isfence1_latch <= 0;
-      end else if (~fence && ~stall_DP) begin
-         if (isfence1)
-            isfence1_latch <= 1;
-
-         if (isfence1 || isfence2)
-            fence <= 1;
-      end else if (fence_done) begin
-		 fence <= 0;
-         isfence1_latch <= 0;
+	    fence <= 0;
+        isfence1_latch <= 0;
+        iscsr_w <= 0;
+      end else if (~fence && ~iscsr_w && ~stall_DP) begin
+          if (isfence1 || iscsr1) begin
+              if (isfence1) begin
+                  fence <= 1;
+                  isfence1_latch <= 1;
+              end
+              if (iscsr1) begin
+                  iscsr_w <= 1;
+              end
+          end else begin
+              if (isfence2) begin
+                  fence <= 1;
+              end
+              if (iscsr2) begin
+                  iscsr_w <= 1;
+              end
+          end
+      end else begin
+          if (fence_done) begin
+              fence <= 0;
+              isfence1_latch <= 0;
+          end
+          if (csrcommit) begin
+              iscsr_w <= 0;
+          end
       end
    end
 
@@ -924,7 +959,7 @@ module pipeline
 		);
 
    always @ (posedge clk) begin
-      if (reset || kill_ID || fence) begin
+      if (reset || kill_ID || fence || iscsr_w) begin
 	 imm_type_1_id <= 0;
 	 rs1_1_id <= 0;
 	 rs2_1_id <= 0;
@@ -1071,7 +1106,7 @@ module pipeline
 
    //Invalidation of specbit when prsuccess(stall)
    always @ (posedge clk) begin
-      if (reset || kill_ID || fence) begin
+      if (reset || kill_ID || fence || iscsr_w) begin
 	 spec1_id <= 0;
 	 spec2_id <= 0;
       end else if (prsuccess) begin
@@ -2618,6 +2653,7 @@ module pipeline
 		  .arfwe2(arfwe2),
 		  .dstarf1(dstarf1),
 		  .dstarf2(dstarf2),
+		  .pc_comcsr(pc_comcsr),
 		  .pc_combranch(pc_combranch),
 		  .bhr_combranch(bhr_combranch),
 		  .brcond_combranch(brcond_combranch),

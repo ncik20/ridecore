@@ -8,7 +8,7 @@ module reorderbuf
    //Write Signal
    input wire 			  dp1,
    input wire [`RRF_SEL-1:0] 	  dp1_addr,
-   input wire [`INSN_LEN-1:0] 	  pc_dp1,
+   input wire [`ADDR_LEN-1:0] 	  pc_dp1,
    input wire 			  storebit_dp1,
    input wire [2:0]  	  csrbit_dp1,
    input wire 			  dstvalid_dp1,
@@ -18,7 +18,7 @@ module reorderbuf
    input wire [11:0]      instype_dp1,
    input wire 			  dp2,
    input wire [`RRF_SEL-1:0] 	  dp2_addr,
-   input wire [`INSN_LEN-1:0] 	  pc_dp2,
+   input wire [`ADDR_LEN-1:0] 	  pc_dp2,
    input wire 			  storebit_dp2,
    input wire [2:0]		  csrbit_dp2,
    input wire 			  dstvalid_dp2,
@@ -51,6 +51,7 @@ module reorderbuf
    output wire 			          arfwe2,
    output wire [`REG_SEL-1:0] 	  dstarf1,
    output wire [`REG_SEL-1:0] 	  dstarf2,
+   output wire [`ADDR_LEN-1:0] 	  pc_comcsr,
    output wire [`ADDR_LEN-1:0] 	  pc_combranch,
    output wire [`GSH_BHR_LEN-1:0] bhr_combranch,
    output reg 			          brcond_combranch,
@@ -171,7 +172,6 @@ module reorderbuf
          brcond_combranch <= combranch1 ? brcond[comptr] : brcond[comptr2];
          combranch1_latch <= combranch1;
 
-          // last_commit_count=0说明没有commit，所以无需latch
           if (comnum == 2'd1) begin
              last_commit_jmpaddr <= jmpaddr1;
              last_commit_inst_pc <= inst_pc1;
@@ -224,6 +224,7 @@ module reorderbuf
    assign stcommit = stcommit_latch && nocom;
    assign csrcommit = ((commit1_latch && (csrbit1[2:1] == 2'b11)) ||
 		               (commit2_latch && (csrbit2[2:1] == 2'b11))) && nocom;
+   assign pc_comcsr = (commit1_latch && (csrbit1[2:1] == 2'b11)) ? inst_pc1 : inst_pc2;
    assign arfwe1 = arfwe1_latch && nocom;
    assign arfwe2 = arfwe2_latch && nocom;
    // assign dstarf1 = dst[comptr];
