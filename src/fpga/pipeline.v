@@ -622,13 +622,22 @@ module pipeline
 	wire                        ebreak;
 
     reg                         fence;
+    reg                         fence_i;
+    reg [`ADDR_LEN-1:0]         fence_i_next_pc;
     reg                         isfence1_latch;
+    reg                         fence_i_clean_started;
     wire                        isfence1;
     wire                        isfence2;
+    wire                        isfence_i1;
+    wire                        isfence_i2;
     wire                        inv2_if_;
     wire [`RRF_SEL-1:0]         comptr_;
     wire                        all_commit;
+    wire                        all_commit_fence_i;
+    wire                        dcache_clean_start;
+    wire                        dcache_clean_done;
     wire                        fence_done;
+    wire                        fence_i_flush;
 
     reg                         iscsr_w;
     wire                        iscsr1;
@@ -650,7 +659,9 @@ module pipeline
    assign irq_flush = icache_req_ok & mstatus_mie & (
        (mie[11] & eirq) || (mie[7] & tirq) || (mie[3] & sirq));
 
-   assign kill_IF = prmiss | irq_flush | csr_flush;
+   assign fence_i_flush = fence_i & fence_done;
+
+   assign kill_IF = prmiss | irq_flush | csr_flush | fence_i_flush;
    assign kill_icache_req = kill_IF;
 
    assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
@@ -673,6 +684,8 @@ module pipeline
          pc <= {mtvec[31:2], 2'b0};
       end else if (csr_flush) begin
          pc <= pc_comcsr + 4;
+      end else if (fence_i_flush) begin
+         pc <= fence_i_next_pc;
       end else if (prmiss) begin
 		 pc <= jmpaddr;
       end else if (~icache_req) begin
@@ -828,6 +841,8 @@ module pipeline
 		      1'b1 : 1'b0;
    assign isfence2 = (~inv2_if && (inst2_if[6:0] == `RV32_MISC_MEM)) ?
 		      1'b1 : 1'b0;
+   assign isfence_i1 = isfence1 && (alu_op_1 == `FENCE_I);
+   assign isfence_i2 = isfence2 && (alu_op_2 == `FENCE_I);
 
    assign iscsr1 = (~inv1_if &&
        (rs_ent_1 == `RS_ENT_CSR && csr_op_1 != `CSR_READ)) ? 1'b1 : 1'b0;
@@ -854,21 +869,35 @@ module pipeline
    assign comptr_ = (~prmiss && comnum > 1) ? comptr2 :
                     (~prmiss && comnum > 0) ? comptr : comptr - 1;
 
-   assign all_commit = ((buf_rrftag_alu1 == comptr_ + 1 && buf_alu_op_alu1 == `FENCE)
-   || (buf_rrftag_alu2 == comptr_ + 1 && buf_alu_op_alu2 == `FENCE)) ? 1'b1 : 1'b0;
+   assign all_commit = ((buf_rrftag_alu1 == comptr_ + 1 &&
+       (buf_alu_op_alu1 == `FENCE || buf_alu_op_alu1 == `FENCE_I))
+   || (buf_rrftag_alu2 == comptr_ + 1 &&
+       (buf_alu_op_alu2 == `FENCE || buf_alu_op_alu2 == `FENCE_I))) ? 1'b1 : 1'b0;
 
-   assign fence_done = all_commit & sb_empty & dcache_idle & ~mmio_busy;
+   assign all_commit_fence_i = ((buf_rrftag_alu1 == comptr_ + 1 && buf_alu_op_alu1 == `FENCE_I)
+   || (buf_rrftag_alu2 == comptr_ + 1 && buf_alu_op_alu2 == `FENCE_I)) ? 1'b1 : 1'b0;
+
+   assign dcache_clean_start = all_commit_fence_i & sb_empty & dcache_idle & ~mmio_busy &
+                               ~fence_i_clean_started;
+   assign fence_done = all_commit & sb_empty & ~mmio_busy &
+                       (all_commit_fence_i ? dcache_clean_done :
+                        (dcache_idle & ~fence_i_clean_started));
 
    always @ (posedge clk) begin
 
       if (reset || kill_ID) begin
 	    fence <= 0;
+        fence_i <= 0;
+        fence_i_next_pc <= 0;
         isfence1_latch <= 0;
+        fence_i_clean_started <= 0;
         iscsr_w <= 0;
       end else if (~fence && ~iscsr_w && ~stall_DP) begin
           if (isfence1 || iscsr1) begin
               if (isfence1) begin
                   fence <= 1;
+                  fence_i <= isfence_i1;
+                  fence_i_next_pc <= pc1_if + 4;
                   isfence1_latch <= 1;
               end
               if (iscsr1) begin
@@ -877,15 +906,23 @@ module pipeline
           end else begin
               if (isfence2) begin
                   fence <= 1;
+                  fence_i <= isfence_i2;
+                  fence_i_next_pc <= pc2_if + 4;
               end
               if (iscsr2) begin
                   iscsr_w <= 1;
               end
           end
       end else begin
+          if (dcache_clean_start) begin
+              fence_i_clean_started <= 1;
+          end
           if (fence_done) begin
               fence <= 0;
+              fence_i <= 0;
+              fence_i_next_pc <= 0;
               isfence1_latch <= 0;
+              fence_i_clean_started <= 0;
           end
           if (csrcommit) begin
               iscsr_w <= 0;
@@ -2254,6 +2291,8 @@ module pipeline
         .invalidate_valid(1'b0),
         .invalidate_addr(32'h0),
         .invalidate_all(1'b0),
+        .clean_start(dcache_clean_start),
+        .clean_done(dcache_clean_done),
 
         .mem_data_data(dmem_data),
         .mem_data_ready(dmem_done),

@@ -128,6 +128,8 @@ module dm_cache_pl(input logic clk, input logic rst,
         input logic invalidate_valid,
         input logic [31:0] invalidate_addr,
         input logic invalidate_all,
+        input logic clean_start,
+        output logic clean_done,
 
 		input logic [127:0] mem_data_data,		//128-bit read back data
 		input logic mem_data_ready,				//data is ready
@@ -159,6 +161,16 @@ module dm_cache_pl(input logic clk, input logic rst,
     logic               cache_miss;
     logic [1:0]         mem_access;
     logic               write_back_done;
+    logic               clean_active;
+    logic               clean_req_valid;
+    logic               clean_write_wait;
+    logic               clean_read_pending;
+    logic [TAGLSB-4-1:0] clean_index;
+    logic [TAGLSB-4-1:0] clean_read_index;
+    logic [TAGMSB:TAGLSB] clean_read_tag;
+    logic               clean_read_valid;
+    logic               clean_read_dirty;
+    logic [127:0]       clean_read_data;
 
     logic [31:0]        req_addr_stage1;
     logic [31:0]        req_data_stage1;
@@ -200,8 +212,10 @@ module dm_cache_pl(input logic clk, input logic rst,
 /*	assign mem_req = v_mem_req;					//connect to output ports
 	assign cpu_res = v_cpu_res;*/
 
-    assign busy = cache_miss | (|mem_access);
-    assign idle = ~(accept_req | req_valid_stage1);
+    assign busy = cache_miss | (|mem_access) | clean_active | clean_req_valid |
+                  clean_write_wait | clean_read_pending;
+    assign idle = ~(accept_req | req_valid_stage1 | clean_active | clean_req_valid |
+                    clean_write_wait | clean_read_pending);
 
 	assign mem_req_addr = v_mem_req.addr;
 	assign mem_req_data = v_mem_req.data;
@@ -295,6 +309,17 @@ module dm_cache_pl(input logic clk, input logic rst,
             req_kill_latch <= '0;
             mem_access <= '0;
             write_back_done <= '0;
+            clean_active <= 1'b0;
+            clean_req_valid <= 1'b0;
+            clean_write_wait <= 1'b0;
+            clean_read_pending <= 1'b0;
+            clean_index <= '0;
+            clean_read_index <= '0;
+            clean_read_tag <= '0;
+            clean_read_valid <= 1'b0;
+            clean_read_dirty <= 1'b0;
+            clean_read_data <= '0;
+            clean_done <= 1'b0;
 
             req_addr_stage1 <= '0;
             req_data_stage1 <= '0;
@@ -307,8 +332,47 @@ module dm_cache_pl(input logic clk, input logic rst,
 	        cpu_res_data <= v_cpu_res.data;
 	        cpu_res_ready <= v_cpu_res.ready;
             cpu_res_pc <= req_addr_stage1;
+            clean_done <= 1'b0;
 
-            if (accept_req) begin
+            if (clean_start && !clean_active && !clean_req_valid &&
+                !clean_write_wait && !clean_read_pending &&
+                !(|mem_access) && !cache_miss) begin
+                clean_active <= 1'b1;
+                clean_index <= '0;
+            end
+
+            if (clean_read_pending) begin
+                clean_read_pending <= 1'b0;
+                clean_read_valid <= tag_read1.valid;
+                clean_read_dirty <= tag_read1.dirty;
+                clean_read_tag <= tag_read1.tag;
+                clean_read_index <= clean_index;
+                clean_read_data <= data_read1;
+                clean_index <= clean_index + {{(TAGLSB-4-1){1'b0}}, 1'b1};
+
+                if (tag_read1.valid && tag_read1.dirty) begin
+                    clean_req_valid <= 1'b1;
+                    clean_active <= 1'b0;
+                end else if (clean_index == {TAGLSB-4{1'b1}}) begin
+                    clean_active <= 1'b0;
+                    clean_done <= 1'b1;
+                end
+            end else if (clean_req_valid && mem_data_ready) begin
+                clean_req_valid <= 1'b0;
+                clean_write_wait <= 1'b1;
+            end else if (clean_write_wait) begin
+                clean_write_wait <= 1'b0;
+                if (clean_read_index == {TAGLSB-4{1'b1}}) begin
+                    clean_done <= 1'b1;
+                end else begin
+                    clean_active <= 1'b1;
+                end
+            end else if (clean_active) begin
+                clean_read_pending <= 1'b1;
+            end
+
+            if (accept_req && !clean_active && !clean_req_valid &&
+                !clean_write_wait && !clean_read_pending && !clean_start) begin
                 req_addr_stage1 <= cpu_req_addr;
                 req_data_stage1 <= cpu_req_data;
                 req_funct3_stage1 <= cpu_req_funct3;
@@ -376,7 +440,13 @@ module dm_cache_pl(input logic clk, input logic rst,
         // if (~mem_access && ~cpu_req_kill && cpu_req_valid) begin
         // bram不支持读优先(读写同时发生，读出写入的数据)
         // 所以有写发生的时候不能读
-        if (accept_req) begin
+        if (clean_active) begin
+            tag_req1.index = clean_index;
+            tag_req1.en = 1'b1;
+            data_req1.index = clean_index;
+            data_req1.en = 1'b1;
+        end else if (accept_req && !clean_req_valid &&
+                     !clean_write_wait && !clean_read_pending && !clean_start) begin
 		    tag_req1.en = 1'b1;
 		    data_req1.en = 1'b1;
         end
@@ -475,8 +545,17 @@ module dm_cache_pl(input logic clk, input logic rst,
 		v_mem_req.rw = '0;
 		v_mem_req.valid = '0;
 
+        if (clean_req_valid) begin
+            v_mem_req.addr = {clean_read_tag, clean_read_index, 4'b0000};
+            v_mem_req.data = clean_read_data;
+            v_mem_req.byteenable = 16'hFFFF;
+            v_mem_req.rw = 2'd2;
+            v_mem_req.valid = 1'b1;
+        end
+
         // if (~mem_access && ~cpu_req_kill && req_valid_stage1) begin
-        if (~|mem_access && do_stage2 && req_valid_stage1) begin
+        if (~|mem_access && !clean_active && !clean_req_valid &&
+            !clean_write_wait && !clean_read_pending && do_stage2 && req_valid_stage1) begin
 		    /*cache hit (tag match and cache entry is valid)*/
 		    if (req_addr_stage1[TAGMSB:TAGLSB] == tag_read.tag && tag_read.valid) begin
 			    /*write hit*/
@@ -553,6 +632,15 @@ module dm_cache_pl(input logic clk, input logic rst,
             tag_req2.en = 1'b1;
             tag_write2.tag = invalidate_addr[TAGMSB:TAGLSB];
             tag_write2.valid = 1'b0;
+            tag_write2.dirty = 1'b0;
+            data_req2.en = 1'b0;
+        end
+
+        if (clean_write_wait) begin
+            tag_req2.index = clean_read_index;
+            tag_req2.en = 1'b1;
+            tag_write2.tag = clean_read_tag;
+            tag_write2.valid = clean_read_valid;
             tag_write2.dirty = 1'b0;
             data_req2.en = 1'b0;
         end

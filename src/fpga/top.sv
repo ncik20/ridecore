@@ -253,6 +253,8 @@ module rc #(
         .invalidate_valid(il1_invalidate_valid),
         .invalidate_addr(il1_invalidate_addr),
         .invalidate_all(1'b0),
+        .clean_start(1'b0),
+        .clean_done(),
 
         .mem_data_data(imem_data),
         .mem_data_ready(imem_done),
