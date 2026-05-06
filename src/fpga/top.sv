@@ -14,16 +14,7 @@ module rc #(
    input  wire              clk,
    input  wire              clk_rtc,
    input  wire              reset_n,
-   // avalon_mm_i
-   output wire              avm_i_read,
-   output wire              avm_i_write,
-   output wire [127:0]      avm_i_writedata,
-   output wire [31:0]       avm_i_address,
-   input  wire [127:0]      avm_i_readdata,
-   input  wire              avm_i_readdatavalid,
-   output wire [15:0]       avm_i_byteenable,
-   input  wire              avm_i_waitrequest,
-   output wire [10:0]       avm_i_burstcount,
+
    // avalon_mm_d
    output wire              avm_d_read,
    output wire              avm_d_write,
@@ -69,8 +60,19 @@ module rc #(
 
    wire [1:0]               imem_we;
    wire [`ADDR_LEN-1:0]     imem_addr;
+   wire [15:0]              imem_byteenable;
+   wire [4*`INSN_LEN-1:0]   imem_wdata;
    wire [4*`INSN_LEN-1:0]   imem_data;
    wire                     imem_done;
+
+   wire [1:0]               l2_mem_we;
+   wire [`ADDR_LEN-1:0]     l2_mem_addr;
+   wire [15:0]              l2_mem_byteenable;
+   wire [4*`DATA_LEN-1:0]   l2_mem_wdata;
+   wire [4*`DATA_LEN-1:0]   l2_mem_data;
+   wire                     l2_mem_done;
+   wire                     il1_invalidate_valid;
+   wire [`ADDR_LEN-1:0]     il1_invalidate_addr;
 
    wire [1:0]               mmio_we;
    wire [`ADDR_LEN-1:0]     mmio_addr;
@@ -172,7 +174,7 @@ module rc #(
       .avm_m0_waitrequest(avm_io_waitrequest),
       .avm_m0_burstcount(avm_io_burstcount),
       // .mem_req_rw((mmio_addr[17:16] == 2'b10) ? mmio_we : 2'd0),
-      .mem_req_rw((mmio_addr[31:16] == 16'h4000 && mmio_addr[31:16] == 16'h4001) ? 2'd0 : mmio_we),
+      .mem_req_rw((mmio_addr[31:16] == 16'h4000 || mmio_addr[31:16] == 16'h4001) ? 2'd0 : mmio_we),
       .maddr(mmio_addr),
       .byteenable(mmio_byteenable),
       .write_data(mmio_wdata),
@@ -192,13 +194,14 @@ module rc #(
       .avm_m0_byteenable(avm_d_byteenable),
       .avm_m0_waitrequest(avm_d_waitrequest),
       .avm_m0_burstcount(avm_d_burstcount),
-      .mem_req_rw(dmem_we),
-      .maddr(dmem_addr),
-      .byteenable(dmem_byteenable),
-      .write_data(dmem_wdata),
-      .read_data(dmem_data),
-      .mem_done(dmem_done)
+      .mem_req_rw(l2_mem_we),
+      .maddr(l2_mem_addr),
+      .byteenable(l2_mem_byteenable),
+      .write_data(l2_mem_wdata),
+      .read_data(l2_mem_data),
+      .mem_done(l2_mem_done)
             );
+
 
    always @ (posedge clk) begin
       if (mmio_addr[17:16] == 2'b00 && |mmio_we) begin
@@ -247,11 +250,16 @@ module rc #(
         .cpu_req_rw(1'b0),
         .cpu_req_valid(rw_flag_ & icache_req),
         .cpu_req_kill(kill_icache_req),
+        .invalidate_valid(il1_invalidate_valid),
+        .invalidate_addr(il1_invalidate_addr),
+        .invalidate_all(1'b0),
 
         .mem_data_data(imem_data),
         .mem_data_ready(imem_done),
 
         .mem_req_addr(imem_addr),
+        .mem_req_data(imem_wdata),
+        .mem_req_byteenable(imem_byteenable),
         .mem_req_rw(imem_we),
         //.mem_req_valid
 
@@ -261,24 +269,34 @@ module rc #(
         .busy(icache_busy)
    );
 
-   avalon_sdr sdr_i(
+   l2_cache l2(
       .clk(clk),
-      .reset(~reset_n),
-      .avm_m0_read(avm_i_read),
-      .avm_m0_write(avm_i_write),
-      .avm_m0_writedata(avm_i_writedata),
-      .avm_m0_address(avm_i_address),
-      .avm_m0_readdata(avm_i_readdata),
-      .avm_m0_readdatavalid(avm_i_readdatavalid),
-      .avm_m0_byteenable(avm_i_byteenable),
-      .avm_m0_waitrequest(avm_i_waitrequest),
-      .avm_m0_burstcount(avm_i_burstcount),
-      .mem_req_rw(imem_we),
-      .maddr(imem_addr),
-      .byteenable(16'hFFFF),
-      .read_data(imem_data),
-      .mem_done(imem_done)
-      );
+      .rst(~reset_n),
+
+      .i_req_addr(imem_addr),
+      .i_req_data(imem_wdata),
+      .i_req_byteenable(16'hFFFF),
+      .i_req_rw(imem_we),
+      .i_rsp_data(imem_data),
+      .i_rsp_done(imem_done),
+
+      .d_req_addr(dmem_addr),
+      .d_req_data(dmem_wdata),
+      .d_req_byteenable(dmem_byteenable),
+      .d_req_rw(dmem_we),
+      .d_rsp_data(dmem_data),
+      .d_rsp_done(dmem_done),
+
+      .i_invalidate_valid(il1_invalidate_valid),
+      .i_invalidate_addr(il1_invalidate_addr),
+
+      .mem_req_addr(l2_mem_addr),
+      .mem_req_data(l2_mem_wdata),
+      .mem_req_byteenable(l2_mem_byteenable),
+      .mem_req_rw(l2_mem_we),
+      .mem_rsp_data(l2_mem_data),
+      .mem_rsp_done(l2_mem_done)
+   );
 
 endmodule // top
 

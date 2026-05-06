@@ -2251,6 +2251,9 @@ module pipeline
         // 1)这种情况无需向cache发送kill请求
         // 2)exunit_ldst执行的是st的情况也无需发送kill请求
         .cpu_req_kill(buf_dstval_ldst && ~dcache_r_req_en && kill_ld_req),
+        .invalidate_valid(1'b0),
+        .invalidate_addr(32'h0),
+        .invalidate_all(1'b0),
 
         .mem_data_data(dmem_data),
         .mem_data_ready(dmem_done),

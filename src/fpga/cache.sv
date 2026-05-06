@@ -125,6 +125,9 @@ module dm_cache_pl(input logic clk, input logic rst,
 		input logic cpu_req_rw,					//request type : 0 = read, 1 = write
 		input logic cpu_req_valid,				//request is valid
         input logic cpu_req_kill,
+        input logic invalidate_valid,
+        input logic [31:0] invalidate_addr,
+        input logic invalidate_all,
 
 		input logic [127:0] mem_data_data,		//128-bit read back data
 		input logic mem_data_ready,				//data is ready
@@ -543,6 +546,15 @@ module dm_cache_pl(input logic clk, input logic rst,
             /*read/modify cache line*/
             tag_req2.en = 1'b1;
             data_req2.en = 1'b1;
+        end
+
+        if (invalidate_valid) begin
+            tag_req2.index = invalidate_addr[TAGLSB-1:4];
+            tag_req2.en = 1'b1;
+            tag_write2.tag = invalidate_addr[TAGMSB:TAGLSB];
+            tag_write2.valid = 1'b0;
+            tag_write2.dirty = 1'b0;
+            data_req2.en = 1'b0;
         end
     end
 
