@@ -16,7 +16,7 @@ module l2_sync_ram #(
     input  wire logic [DATA_WIDTH-1:0] wdata,
     input  wire logic                  we
 );
-    logic [DATA_WIDTH-1:0] mem [0:DATA_DEPTH-1];
+    (* ramstyle = "M10K" *) logic [DATA_WIDTH-1:0] mem [0:DATA_DEPTH-1];
     integer init_i;
 
     initial begin
@@ -45,6 +45,7 @@ module l2_cache_bank #(
     input  wire logic [31:0]  start_addr,
     input  wire logic [127:0] start_wdata,
     input  wire logic [15:0]  start_byteenable,
+    input  wire logic         start_clean,
     output logic         busy,
 
     output logic         done,
@@ -69,14 +70,17 @@ module l2_cache_bank #(
     localparam int META_WIDTH = TAG_BITS + 3;
     localparam logic [1:0] BANK_SEL = BANK_ID[1:0];
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         ST_IDLE,
         ST_LOOKUP,
         ST_WB_REQ,
         ST_WB_WAIT,
         ST_FILL_REQ,
         ST_FILL_WAIT,
-        ST_UPDATE
+        ST_UPDATE,
+        ST_CLEAN_WB_REQ,
+        ST_CLEAN_WB_WAIT,
+        ST_CLEAN_UPDATE
     } state_t;
 
     state_t state;
@@ -86,6 +90,7 @@ module l2_cache_bank #(
     logic [31:0]  req_addr;
     logic [127:0] req_wdata;
     logic [15:0]  req_byteenable;
+    logic         req_clean;
     logic [SET_BITS-1:0] req_set;
     logic [TAG_BITS-1:0] req_tag;
 
@@ -188,6 +193,14 @@ module l2_cache_bank #(
             meta1_waddr = reset_clear_addr;
             meta0_wdata = {META_WIDTH{1'b0}};
             meta1_wdata = {META_WIDTH{1'b0}};
+        end else if (state == ST_LOOKUP && hit && req_clean && (hit_way ? lookup_dirty1 : lookup_dirty0)) begin
+            if (hit_way) begin
+                meta1_we = 1'b1;
+                meta1_wdata = {1'b1, 1'b0, lookup_l1i1, tag1_read};
+            end else begin
+                meta0_we = 1'b1;
+                meta0_wdata = {1'b1, 1'b0, lookup_l1i0, tag0_read};
+            end
         end else if (state == ST_LOOKUP && hit && req_rw[1]) begin
             if (hit_way) begin
                 data1_we = 1'b1;
@@ -277,6 +290,7 @@ module l2_cache_bank #(
                         req_addr <= {start_addr[31:4], 4'b0000};
                         req_wdata <= start_wdata;
                         req_byteenable <= start_byteenable;
+                        req_clean <= start_clean;
                         req_set <= start_addr[16:6];
                         req_tag <= start_addr[31:17];
                         state <= ST_LOOKUP;
@@ -287,11 +301,16 @@ module l2_cache_bank #(
                     lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]};
 
                     if (hit) begin
-                        done <= 1'b1;
-                        done_is_i <= req_is_i;
-                        done_rdata <= hit_way ? data1_read : data0_read;
+                        if (req_clean && (hit_way ? lookup_dirty1 : lookup_dirty0)) begin
+                            state <= ST_CLEAN_WB_REQ;
+                        end else begin
+                            done <= 1'b1;
+                            done_is_i <= req_is_i;
+                            done_rdata <= hit_way ? data1_read : data0_read;
+                            state <= ST_IDLE;
+                        end
 
-                        if (req_rw[1]) begin
+                        if (!req_clean && req_rw[1]) begin
                             if (hit_way) begin
                                 if (lookup_l1i1) begin
                                     invalidate_valid <= 1'b1;
@@ -305,8 +324,13 @@ module l2_cache_bank #(
                             end
                         end
 
-                        state <= ST_IDLE;
                     end else begin
+                        if (req_clean) begin
+                            done <= 1'b1;
+                            done_is_i <= req_is_i;
+                            done_rdata <= 128'h0;
+                            state <= ST_IDLE;
+                        end else begin
                         victim_way <= select_victim_way;
                         victim_tag <= select_victim_tag;
                         victim_data <= select_victim_data;
@@ -320,7 +344,32 @@ module l2_cache_bank #(
                             state <= ST_WB_REQ;
                         else
                             state <= ST_FILL_REQ;
+                        end
                     end
+                end
+
+                ST_CLEAN_WB_REQ: begin
+                    lower_req_valid <= 1'b1;
+                    lower_req_rw <= 2'd2;
+                    lower_req_addr <= req_addr;
+                    lower_req_wdata <= hit_way ? data1_read : data0_read;
+                    lower_req_byteenable <= 16'hFFFF;
+                    if (lower_req_accept) begin
+                        lower_req_valid <= 1'b0;
+                        state <= ST_CLEAN_WB_WAIT;
+                    end
+                end
+
+                ST_CLEAN_WB_WAIT: begin
+                    if (lower_rsp_done)
+                        state <= ST_CLEAN_UPDATE;
+                end
+
+                ST_CLEAN_UPDATE: begin
+                    done <= 1'b1;
+                    done_is_i <= req_is_i;
+                    done_rdata <= hit_way ? data1_read : data0_read;
+                    state <= ST_IDLE;
                 end
 
                 ST_WB_REQ: begin
@@ -430,6 +479,10 @@ module l2_cache(
     output logic [127:0] d_rsp_data,
     output logic         d_rsp_done,
 
+    input  wire logic         clean_addr_start,
+    input  wire logic [31:0]  clean_addr,
+    output logic              clean_addr_done,
+
     output logic         i_invalidate_valid,
     output logic [31:0]  i_invalidate_addr,
 
@@ -458,6 +511,13 @@ module l2_cache(
     logic [31:0]  d_outstanding_addr;
     logic [1:0]   d_outstanding_rw;
 
+    logic         clean_pending;
+    logic         clean_outstanding;
+    logic [31:0]  clean_pending_addr;
+    logic [1:0]   clean_outstanding_bank;
+    logic [31:0]  clean_outstanding_addr;
+    logic [3:0]   clean_done_bank;
+
     logic [3:0] bank_busy;
     logic [3:0] bank_done;
     logic [3:0] bank_done_is_i;
@@ -475,20 +535,30 @@ module l2_cache(
 
     logic [3:0] start_i_bank;
     logic [3:0] start_d_bank;
+    logic [3:0] start_clean_bank;
     logic [1:0] i_bank_sel;
     logic [1:0] d_bank_sel;
+    logic [1:0] clean_bank_sel;
     logic i_can_start;
     logic d_can_start;
+    logic clean_can_start;
 
     assign i_bank_sel = i_pending_addr[5:4];
     assign d_bank_sel = d_pending_addr[5:4];
-    assign d_can_start = d_pending && !bank_busy[d_bank_sel];
+    assign clean_bank_sel = clean_pending_addr[5:4];
+    assign clean_can_start = clean_pending && !bank_busy[clean_bank_sel];
+    assign d_can_start = d_pending && !bank_busy[d_bank_sel] &&
+                         !(clean_can_start && clean_bank_sel == d_bank_sel);
     assign i_can_start = i_pending && !bank_busy[i_bank_sel] &&
+                          !(clean_can_start && clean_bank_sel == i_bank_sel) &&
                           !(d_can_start && d_bank_sel == i_bank_sel);
 
     always_comb begin
         start_i_bank = 4'b0000;
         start_d_bank = 4'b0000;
+        start_clean_bank = 4'b0000;
+        if (clean_can_start)
+            start_clean_bank[clean_bank_sel] = 1'b1;
         if (i_can_start)
             start_i_bank[i_bank_sel] = 1'b1;
         if (d_can_start)
@@ -501,12 +571,15 @@ module l2_cache(
             l2_cache_bank #(.BANK_ID(b)) bank (
                 .clk(clk),
                 .rst(rst),
-                .start(start_i_bank[b] | start_d_bank[b]),
+                .start(start_clean_bank[b] | start_i_bank[b] | start_d_bank[b]),
                 .start_is_i(start_i_bank[b]),
-                .start_rw(start_i_bank[b] ? i_pending_rw : d_pending_rw),
-                .start_addr(start_i_bank[b] ? i_pending_addr : d_pending_addr),
+                .start_rw(start_clean_bank[b] ? 2'd0 :
+                          (start_i_bank[b] ? i_pending_rw : d_pending_rw)),
+                .start_addr(start_clean_bank[b] ? clean_pending_addr :
+                            (start_i_bank[b] ? i_pending_addr : d_pending_addr)),
                 .start_wdata(start_i_bank[b] ? i_pending_data : d_pending_data),
                 .start_byteenable(start_i_bank[b] ? i_pending_byteenable : d_pending_byteenable),
+                .start_clean(start_clean_bank[b]),
                 .busy(bank_busy[b]),
                 .done(bank_done[b]),
                 .done_is_i(bank_done_is_i[b]),
@@ -588,6 +661,10 @@ module l2_cache(
             i_outstanding <= 1'b0;
             d_pending <= 1'b0;
             d_outstanding <= 1'b0;
+            clean_pending <= 1'b0;
+            clean_outstanding <= 1'b0;
+            clean_outstanding_bank <= 2'd0;
+            clean_outstanding_addr <= 32'h0;
             mem_busy <= 1'b0;
             mem_bank <= 2'd0;
         end else begin
@@ -595,6 +672,8 @@ module l2_cache(
                 i_outstanding <= 1'b0;
             if (d_rsp_done)
                 d_outstanding <= 1'b0;
+            if (clean_addr_done)
+                clean_outstanding <= 1'b0;
 
             if (i_req_rw != 2'd0 && !i_pending &&
                 !(i_outstanding && i_outstanding_addr == i_req_addr && i_outstanding_rw == i_req_rw)) begin
@@ -612,7 +691,18 @@ module l2_cache(
                 d_pending_byteenable <= d_req_byteenable;
                 d_pending_rw <= d_req_rw;
             end
+            if (clean_addr_start && !clean_pending &&
+                !(clean_outstanding && clean_outstanding_addr == clean_addr)) begin
+                clean_pending <= 1'b1;
+                clean_pending_addr <= clean_addr;
+            end
 
+            if (clean_can_start) begin
+                clean_pending <= 1'b0;
+                clean_outstanding <= 1'b1;
+                clean_outstanding_bank <= clean_bank_sel;
+                clean_outstanding_addr <= clean_pending_addr;
+            end
             if (i_can_start) begin
                 i_pending <= 1'b0;
                 i_outstanding <= 1'b1;
@@ -638,6 +728,7 @@ module l2_cache(
     always_comb begin
         i_rsp_done = 1'b0;
         d_rsp_done = 1'b0;
+        clean_addr_done = 1'b0;
         i_rsp_data = 128'h0;
         d_rsp_data = 128'h0;
 
@@ -655,16 +746,22 @@ module l2_cache(
             i_rsp_data = bank_done_rdata[3];
         end
 
-        if (bank_done[0] && !bank_done_is_i[0]) begin
+        clean_done_bank = 4'b0000;
+        if (clean_outstanding)
+            clean_done_bank[clean_outstanding_bank] = 1'b1;
+
+        if (clean_outstanding && bank_done[clean_outstanding_bank]) begin
+            clean_addr_done = 1'b1;
+        end else if (bank_done[0] && !bank_done_is_i[0] && !clean_done_bank[0]) begin
             d_rsp_done = 1'b1;
             d_rsp_data = bank_done_rdata[0];
-        end else if (bank_done[1] && !bank_done_is_i[1]) begin
+        end else if (bank_done[1] && !bank_done_is_i[1] && !clean_done_bank[1]) begin
             d_rsp_done = 1'b1;
             d_rsp_data = bank_done_rdata[1];
-        end else if (bank_done[2] && !bank_done_is_i[2]) begin
+        end else if (bank_done[2] && !bank_done_is_i[2] && !clean_done_bank[2]) begin
             d_rsp_done = 1'b1;
             d_rsp_data = bank_done_rdata[2];
-        end else if (bank_done[3] && !bank_done_is_i[3]) begin
+        end else if (bank_done[3] && !bank_done_is_i[3] && !clean_done_bank[3]) begin
             d_rsp_done = 1'b1;
             d_rsp_data = bank_done_rdata[3];
         end

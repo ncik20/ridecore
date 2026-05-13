@@ -112,6 +112,13 @@ module decoder(
            case (funct3)
              `RV32_FUNCT3_FENCE   : alu_op = `FENCE;
              `RV32_FUNCT3_FENCE_I : alu_op = `FENCE_I;
+             `RV32_FUNCT3_CBO : begin
+                uses_rs1 = 1'b1;
+                if (funct12 == `RV32_FUNCT12_CBO_CLEAN && rd == 5'd0)
+                  alu_op = `CBO_CLEAN;
+                else
+                  illegal_instruction = 1'b1;
+             end
              default : illegal_instruction = 1'b1;
            endcase // case (funct3)
         end

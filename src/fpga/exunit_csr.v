@@ -19,6 +19,7 @@ module exunit_csr
    input wire [`SPECTAG_LEN-1:0]    spectagfix,
    input wire [`ADDR_LEN-1:0] 	    irq_jmpaddr,
    input wire [`ADDR_LEN-1:0] 	    dbg_jmpaddr,
+   input wire [2:0]                 dbg_cause,
    output wire [`DATA_LEN-1:0] 	    result,
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
@@ -34,6 +35,8 @@ module exunit_csr
    output reg [`DATA_LEN-1:0]       mtvec,
    output reg [`DATA_LEN-1:0]       mepc,
    output wire [`DATA_LEN-1:0]      dpc_o,
+   output wire                      dcsr_ebreakm,
+   output wire                      dcsr_step,
    output wire                      mstatus_mie
    );
 
@@ -73,6 +76,8 @@ module exunit_csr
 
    assign mstatus_mie = mstatus[3];
    assign dpc_o = dpc;
+   assign dcsr_ebreakm = dcsr[15];
+   assign dcsr_step = dcsr[2];
 
    always @ (posedge clk) begin
       if (reset) begin
@@ -152,10 +157,10 @@ module exunit_csr
 
       if (dbg_flush) begin
         dpc <= dbg_jmpaddr;
-        dcsr[8:6] <= 3'd3;
+        dcsr[8:6] <= dbg_cause;
       end
 
-      if (ecall || ebreak) begin
+      if (ecall || (ebreak && !dcsr_ebreakm)) begin
         mepc <= jmpaddr;
         mstatus[3] <= 1'b0;
         mcause[31] <= 1'b0;

@@ -31,6 +31,10 @@ module pipeline
    input wire                       icache_done,
    input wire                       icache_busy,
 
+   output wire                      l2_clean_addr_start,
+   output wire [`ADDR_LEN-1:0]      l2_clean_addr,
+   input wire                       l2_clean_addr_done,
+
    input wire                       dbg_haltreq,
    input wire  [`ADDR_LEN-1:0]      dbg_entry_pc,
 
@@ -611,9 +615,16 @@ module pipeline
     wire                        pipe_flush;
     wire                        debug_stop;
     wire                        dbg_halt_new;
+    wire                        dbg_ebreak_new;
+    wire                        dbg_step_commit;
+    wire [`ADDR_LEN-1:0]        dbg_next_dpc;
+    wire [2:0]                  dbg_cause;
     reg                         dbg_wait_debug_entry;
     reg                         dbg_in_debug_mode;
+    reg                         dbg_step_running;
+    reg                         dbg_step_issued;
     reg [`ADDR_LEN-1:0]         dbg_dpc_latch;
+    reg [2:0]                   dbg_cause_latch;
     wire [`ADDR_LEN-1:0]        mepc;
     wire [`ADDR_LEN-1:0]        dpc;
     wire [`ADDR_LEN-1:0]        mie;
@@ -633,24 +644,37 @@ module pipeline
     wire [1:0]                  hit_staddr_off;
 
     wire [`ADDR_LEN-1:0] 	    irq_jmpaddr;
+    wire [`ADDR_LEN-1:0]        dbg_step_jmpaddr;
 	wire                        ecall;
 	wire                        ebreak;
+	wire                        ebreak_req;
+    wire                        dcsr_ebreakm;
+    wire                        dcsr_step;
 
     reg                         fence;
     reg                         fence_i;
+    reg                         cbo_clean;
+    reg [`ADDR_LEN-1:0]         cbo_clean_addr;
     reg [`ADDR_LEN-1:0]         fence_i_next_pc;
     reg                         isfence1_latch;
     reg                         fence_i_clean_started;
+    reg                         cbo_dclean_started;
+    reg                         cbo_l2clean_started;
     wire                        isfence1;
     wire                        isfence2;
     wire                        isfence_i1;
     wire                        isfence_i2;
+    wire                        iscbo_clean1;
+    wire                        iscbo_clean2;
     wire                        inv2_if_;
     wire [`RRF_SEL-1:0]         comptr_;
     wire                        all_commit;
     wire                        all_commit_fence_i;
     wire                        dcache_clean_start;
     wire                        dcache_clean_done;
+    wire                        dcache_clean_addr_start;
+    wire [`ADDR_LEN-1:0]        dcache_clean_addr;
+    wire                        dcache_clean_addr_done;
     wire                        fence_done;
     wire                        fence_i_flush;
 
@@ -668,14 +692,20 @@ module pipeline
 
    assign mmio_req_ok = ~mmio_busy;
 
-   assign stall_IF = stall_ID | stall_DP | 
+   assign stall_IF = stall_ID | stall_DP | dbg_step_issued |
        isfence1 | isfence2 | fence | iscsr1 | iscsr2 | iscsr_w;
 
    assign irq_flush = icache_req_ok & mstatus_mie & (
        (mie[11] & eirq) || (mie[7] & tirq) || (mie[3] & sirq));
 
    assign dbg_halt_new = dbg_haltreq & !dbg_in_debug_mode & !dbg_wait_debug_entry;
-   assign dbg_take = dbg_halt_new;
+   assign dbg_ebreak_new = ebreak_req & dcsr_ebreakm & !dbg_in_debug_mode & !dbg_wait_debug_entry;
+   assign dbg_step_commit = dbg_step_running & (comnum != 2'd0) &
+                            !dbg_wait_debug_entry & !dretcommit;
+   assign dbg_take = dbg_halt_new | dbg_ebreak_new;
+   assign dbg_next_dpc = dbg_ebreak_new ? buf_pc_branch : irq_jmpaddr;
+   assign dbg_cause = dbg_ebreak_new ? 3'd1 :
+                      dbg_step_commit ? 3'd4 : 3'd3;
    assign dbg_enter = dbg_wait_debug_entry & sb_empty & icache_req_ok;
    assign pipe_flush = irq_flush | dbg_take;
    assign debug_stop = dbg_halt_new | dbg_wait_debug_entry | dbg_enter;
@@ -703,20 +733,40 @@ module pipeline
       if (reset) begin
          dbg_wait_debug_entry <= 1'b0;
          dbg_in_debug_mode <= 1'b0;
+         dbg_step_running <= 1'b0;
+         dbg_step_issued <= 1'b0;
          dbg_dpc_latch <= 0;
+         dbg_cause_latch <= 0;
       end else begin
+         if (dbg_step_running && !dbg_step_issued && !stall_IF && !invalid1) begin
+            dbg_step_issued <= 1'b1;
+         end
+
          if (dbg_take) begin
             dbg_wait_debug_entry <= 1'b1;
-            dbg_dpc_latch <= irq_jmpaddr;
+            dbg_dpc_latch <= dbg_next_dpc;
+            dbg_cause_latch <= dbg_cause;
+         end
+
+         if (dbg_step_commit) begin
+            dbg_wait_debug_entry <= 1'b1;
+            dbg_step_running <= 1'b0;
+            dbg_step_issued <= 1'b0;
+            dbg_dpc_latch <= dbg_step_jmpaddr;
+            dbg_cause_latch <= 3'd4;
          end
 
          if (dbg_enter) begin
             dbg_wait_debug_entry <= 1'b0;
             dbg_in_debug_mode <= 1'b1;
+            dbg_step_running <= 1'b0;
+            dbg_step_issued <= 1'b0;
          end
 
          if (dretcommit) begin
             dbg_in_debug_mode <= 1'b0;
+            dbg_step_running <= dcsr_step;
+            dbg_step_issued <= 1'b0;
          end
       end
    end
@@ -780,6 +830,7 @@ module pipeline
             // .instype(instype),
 
 	        .rdreq(~stall_IF),
+            .rdOneIns(dbg_step_running),
 		    .pc1(pc1),
 		    .pc2(pc2),
 		    .npc1(npc1),
@@ -890,6 +941,8 @@ module pipeline
 		      1'b1 : 1'b0;
    assign isfence_i1 = isfence1 && (alu_op_1 == `FENCE_I);
    assign isfence_i2 = isfence2 && (alu_op_2 == `FENCE_I);
+   assign iscbo_clean1 = isfence1 && (alu_op_1 == `CBO_CLEAN);
+   assign iscbo_clean2 = isfence2 && (alu_op_2 == `CBO_CLEAN);
 
    assign iscsr1 = (~inv1_if &&
        (rs_ent_1 == `RS_ENT_CSR && csr_op_1 != `CSR_READ)) ? 1'b1 : 1'b0;
@@ -919,33 +972,53 @@ module pipeline
    wire [`RRF_SEL-1:0] fence_commit_tag = comptr_ + {{(`RRF_SEL-1){1'b0}}, 1'b1};
 
    assign all_commit = ((buf_rrftag_alu1 == fence_commit_tag &&
-       (buf_alu_op_alu1 == `FENCE || buf_alu_op_alu1 == `FENCE_I))
+       (buf_alu_op_alu1 == `FENCE || buf_alu_op_alu1 == `FENCE_I ||
+        buf_alu_op_alu1 == `CBO_CLEAN))
    || (buf_rrftag_alu2 == fence_commit_tag &&
-       (buf_alu_op_alu2 == `FENCE || buf_alu_op_alu2 == `FENCE_I))) ? 1'b1 : 1'b0;
+       (buf_alu_op_alu2 == `FENCE || buf_alu_op_alu2 == `FENCE_I ||
+        buf_alu_op_alu2 == `CBO_CLEAN))) ? 1'b1 : 1'b0;
 
    assign all_commit_fence_i = ((buf_rrftag_alu1 == fence_commit_tag && buf_alu_op_alu1 == `FENCE_I)
    || (buf_rrftag_alu2 == fence_commit_tag && buf_alu_op_alu2 == `FENCE_I)) ? 1'b1 : 1'b0;
+   wire all_commit_cbo_clean = ((buf_rrftag_alu1 == fence_commit_tag && buf_alu_op_alu1 == `CBO_CLEAN)
+   || (buf_rrftag_alu2 == fence_commit_tag && buf_alu_op_alu2 == `CBO_CLEAN)) ? 1'b1 : 1'b0;
+   wire [`ADDR_LEN-1:0] all_commit_cbo_addr =
+       (buf_rrftag_alu1 == fence_commit_tag && buf_alu_op_alu1 == `CBO_CLEAN) ?
+       buf_ex_src1_alu1 : buf_ex_src1_alu2;
 
    assign dcache_clean_start = all_commit_fence_i & sb_empty & dcache_idle & ~mmio_busy &
                                ~fence_i_clean_started;
+   assign dcache_clean_addr_start = all_commit_cbo_clean & sb_empty & dcache_idle &
+                                    ~mmio_busy & ~cbo_dclean_started;
+   assign dcache_clean_addr = dcache_clean_addr_start ? all_commit_cbo_addr : cbo_clean_addr;
+   assign l2_clean_addr_start = cbo_clean & cbo_dclean_started &
+                                dcache_clean_addr_done & ~cbo_l2clean_started;
+   assign l2_clean_addr = cbo_clean_addr;
    assign fence_done = all_commit & sb_empty & ~mmio_busy &
                        (all_commit_fence_i ? dcache_clean_done :
-                        (dcache_idle & ~fence_i_clean_started));
+                        (cbo_clean ? (cbo_dclean_started &&
+                         cbo_l2clean_started && l2_clean_addr_done) :
+                        (dcache_idle & ~fence_i_clean_started)));
 
    always @ (posedge clk) begin
 
       if (reset || kill_ID) begin
 	    fence <= 0;
         fence_i <= 0;
+        cbo_clean <= 0;
+        cbo_clean_addr <= 0;
         fence_i_next_pc <= 0;
         isfence1_latch <= 0;
         fence_i_clean_started <= 0;
+        cbo_dclean_started <= 0;
+        cbo_l2clean_started <= 0;
         iscsr_w <= 0;
       end else if (~fence && ~iscsr_w && ~stall_DP) begin
           if (isfence1 || iscsr1) begin
               if (isfence1) begin
                   fence <= 1;
                   fence_i <= isfence_i1;
+                  cbo_clean <= iscbo_clean1;
                   fence_i_next_pc <= pc1_if + 4;
                   isfence1_latch <= 1;
               end
@@ -956,6 +1029,7 @@ module pipeline
               if (isfence2) begin
                   fence <= 1;
                   fence_i <= isfence_i2;
+                  cbo_clean <= iscbo_clean2;
                   fence_i_next_pc <= pc2_if + 4;
               end
               if (iscsr2) begin
@@ -966,12 +1040,23 @@ module pipeline
           if (dcache_clean_start) begin
               fence_i_clean_started <= 1;
           end
+          if (dcache_clean_addr_start) begin
+              cbo_dclean_started <= 1;
+              cbo_clean_addr <= all_commit_cbo_addr;
+          end
+          if (l2_clean_addr_start) begin
+              cbo_l2clean_started <= 1;
+          end
           if (fence_done) begin
               fence <= 0;
               fence_i <= 0;
+              cbo_clean <= 0;
+              cbo_clean_addr <= 0;
               fence_i_next_pc <= 0;
               isfence1_latch <= 0;
               fence_i_clean_started <= 0;
+              cbo_dclean_started <= 0;
+              cbo_l2clean_started <= 0;
           end
           if (csrcommit) begin
               iscsr_w <= 0;
@@ -2341,7 +2426,10 @@ module pipeline
         .invalidate_addr(32'h0),
         .invalidate_all(1'b0),
         .clean_start(dcache_clean_start),
+        .clean_addr_start(dcache_clean_addr_start),
+        .clean_addr(dcache_clean_addr),
         .clean_done(dcache_clean_done),
+        .clean_addr_done(dcache_clean_addr_done),
 
         .mem_data_data(dmem_data),
         .mem_data_ready(dmem_done),
@@ -2602,6 +2690,7 @@ module pipeline
 		     .spectagfix(spectagfix),
              .irq_jmpaddr(irq_jmpaddr),
              .dbg_jmpaddr(dbg_dpc_latch),
+             .dbg_cause(dbg_cause_latch),
 		     .result(result_csr),
 		     .rrf_we(rrfwe_csr),
 		     .rob_we(robwe_csr),
@@ -2617,6 +2706,8 @@ module pipeline
              .mtvec(mtvec),
              .mepc(mepc),
              .dpc_o(dpc),
+             .dcsr_ebreakm(dcsr_ebreakm),
+             .dcsr_step(dcsr_step),
              .mstatus_mie(mstatus_mie)
 		     );
 
@@ -2669,6 +2760,7 @@ module pipeline
                .mepc(mepc),
                .dpc(dpc),
                .dbg_mode(dbg_in_debug_mode),
+               .dbg_ebreak_take(dbg_ebreak_new),
                .dbg_entry_pc(dbg_entry_pc),
 		       .result(result_branch),
 		       .rrf_we(rrfwe_branch),
@@ -2680,7 +2772,8 @@ module pipeline
 		       .brcond(brcond),
 		       .tagregfix(tagregfix),
 		       .ecall(ecall),
-		       .ebreak(ebreak)
+		       .ebreak(ebreak),
+               .ebreak_req(ebreak_req)
 		       );
    
    miss_prediction_fix_table mpft(
@@ -2739,6 +2832,7 @@ module pipeline
 		  .exfin_branch_addr(buf_rrftag_branch),
 		  .exfin_branch_brcond(brcond),
 		  .exfin_branch_jmpaddr(jmpaddr_taken),
+          .dbg_step_running(dbg_step_running),
 
 		  .comptr_latch(comptr),
 		  .comptr_latch2(comptr2),
@@ -2759,6 +2853,7 @@ module pipeline
           .instype_combranch(instype_combranch),
 		  .combranch(combranch),
           .irq_jmpaddr(irq_jmpaddr),
+          .dbg_step_jmpaddr(dbg_step_jmpaddr),
 		  .dispatchptr(rrfptr),
 		  .rrf_freenum(freenum),
 		  .prmiss(prmiss)

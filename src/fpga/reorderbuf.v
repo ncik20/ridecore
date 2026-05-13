@@ -40,6 +40,7 @@ module reorderbuf
    input wire [`RRF_SEL-1:0] 	  exfin_branch_addr,
    input wire 			  exfin_branch_brcond,
    input wire [`ADDR_LEN-1:0] 	  exfin_branch_jmpaddr, 
+   input wire                    dbg_step_running,
   
    output reg [`RRF_SEL-1:0] 	  comptr_latch,
    output wire [`RRF_SEL-1:0] 	  comptr_latch2,
@@ -60,6 +61,7 @@ module reorderbuf
    output wire [11:0] 	          instype_combranch,
    output wire 			          combranch,
    output wire [`ADDR_LEN-1:0] 	  irq_jmpaddr,
+   output wire [`ADDR_LEN-1:0] 	  dbg_step_jmpaddr,
    // output reg  [`ADDR_LEN-1:0] 	  mepc,
    input wire  [`RRF_SEL-1:0] 	  dispatchptr,
    input wire  [`RRF_SEL:0]	      rrf_freenum,
@@ -127,7 +129,8 @@ module reorderbuf
    wire   combranch1 = ~prmiss & commit1 & isbranch[comptr];
    wire   stcommit1 = ~prmiss & commit1 & storebit[comptr];
 
-   assign commit2 = ~combranch1 & ~stcommit1 & commit1 & com_en2 & finish[comptr2];
+   assign commit2 = ~dbg_step_running & ~combranch1 & ~stcommit1 &
+                    commit1 & com_en2 & finish[comptr2];
    assign next_comptr = comptr + commit1 + commit2;
 
    wire nocom = ~prmiss && ~irq_flush;
@@ -252,6 +255,15 @@ module reorderbuf
    wire [`ADDR_LEN-1:0] last_commit_inst_pc_p4 = last_commit_inst_pc + 4;
    assign               irq_jmpaddr = (isbranch_last && brcond_last) ? last_commit_jmpaddr :
                                                                        last_commit_inst_pc_p4;
+
+   wire [`ADDR_LEN-1:0] dbg_step_inst_pc = commit2_latch ? inst_pc2 : inst_pc1;
+   wire [`ADDR_LEN-1:0] dbg_step_jmpaddr_raw = commit2_latch ? jmpaddr2 : jmpaddr1;
+   wire                 dbg_step_isbranch = commit2_latch ? isbranch[comptr_latch2] :
+                                                            isbranch[comptr_latch];
+   wire                 dbg_step_brcond = commit2_latch ? brcond[comptr_latch2] :
+                                                         brcond[comptr_latch];
+   assign               dbg_step_jmpaddr = (dbg_step_isbranch && dbg_step_brcond) ?
+                                           dbg_step_jmpaddr_raw : (dbg_step_inst_pc + 4);
  
    always @ (posedge clk) begin
       if (reset || irq_flush) begin

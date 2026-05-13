@@ -33,7 +33,8 @@ module exunit_alu
    wire 			clearbusy;
    wire 			busy_next;
 
-   wire is_fence = (alu_op == `FENCE || alu_op == `FENCE_I) ? 1'b1 : 1'b0;
+   wire is_fence = (alu_op == `FENCE || alu_op == `FENCE_I ||
+                    alu_op == `CBO_CLEAN) ? 1'b1 : 1'b0;
    assign clearbusy = (kill_speculative || ~is_fence || fence_done) ? 1'b1 : 1'b0;
    assign busy_next = clearbusy ? 1'b0 : busy;
 

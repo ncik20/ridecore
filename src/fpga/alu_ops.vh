@@ -1,4 +1,4 @@
-`define ALU_OP_WIDTH 4
+`define ALU_OP_WIDTH 5
 
 `define ALU_OP_ADD  `ALU_OP_WIDTH'd0
 `define ALU_OP_SLL  `ALU_OP_WIDTH'd1
@@ -17,3 +17,4 @@
 
 `define FENCE       `ALU_OP_WIDTH'd2
 `define FENCE_I     `ALU_OP_WIDTH'd3
+`define CBO_CLEAN   `ALU_OP_WIDTH'd16

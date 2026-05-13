@@ -21,6 +21,7 @@ module instruction_fetch
     // output wire [11:0]              instype,
 
     input  wire                     rdreq,
+    input  wire                     rdOneIns,
     output wire [`ADDR_LEN-1:0]     pc1,
     output wire [`ADDR_LEN-1:0]     pc2,
     output wire [`ADDR_LEN-1:0]     npc1,
@@ -303,20 +304,22 @@ module instruction_fetch
                     read_mask1_next = valid_rdPtr_next;
                     pc_offset1_next = `CLOG2(valid_rdPtr_next) * 4;
 
-                    read_mask2_next = find_valid_rdPtr1 ? (4'b0001 << first_valid_rdPtr1) :
-                                                          read_mask2_next;
-                    pc_offset2_next = first_valid_rdPtr1 * 4;
+                    if (~rdOneIns) begin
+                        read_mask2_next = find_valid_rdPtr1 ? (4'b0001 << first_valid_rdPtr1) :
+                                                              read_mask2_next;
+                        pc_offset2_next = first_valid_rdPtr1 * 4;
+                    end
                 end
                 3'd2, 3'd3, 3'd4:begin
                     if (valid_rdPtr_next[0]) begin
                         pc_offset1_next = 4'd0;
-                        read_mask1_next = 4'b0011;
+                        read_mask1_next = rdOneIns ? 4'b0001 : 4'b0011;
                     end else if (valid_rdPtr_next[1]) begin
                         pc_offset1_next = 4'd4;
-                        read_mask1_next = 4'b0110;
+                        read_mask1_next = rdOneIns ? 4'b0010 : 4'b0110;
                     end else if (valid_rdPtr_next[2]) begin
                         pc_offset1_next = 4'd8;
-                        read_mask1_next = 4'b1100;
+                        read_mask1_next = rdOneIns ? 4'b0100 : 4'b1100;
                     end
                 end
             endcase

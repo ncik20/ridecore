@@ -22,6 +22,7 @@ module exunit_branch
    input wire [`ADDR_LEN-1:0] 	  mepc,
    input wire [`ADDR_LEN-1:0] 	  dpc,
    input wire                     dbg_mode,
+   input wire                     dbg_ebreak_take,
    input wire [`ADDR_LEN-1:0] 	  dbg_entry_pc,
    output wire [`DATA_LEN-1:0] 	  result,
    output wire 			  rrf_we,
@@ -33,7 +34,8 @@ module exunit_branch
    output wire 			  brcond,
    output wire [`SPECTAG_LEN-1:0] tagregfix,
    output wire            ecall,
-   output wire            ebreak
+   output wire            ebreak,
+   output wire            ebreak_req
    );
 
    reg 			        busy;
@@ -41,14 +43,15 @@ module exunit_branch
    wire [`DATA_LEN-1:0] comprslt;
    wire 		        addrmatch = (jmpaddr == praddr) ? 1'b1 : 1'b0;
 
-   assign rob_we = busy && ~irq_flush;
+   assign rob_we = busy && ~irq_flush && ~dbg_ebreak_take;
    assign rrf_we = dstval && rob_we;
    assign prsuccess = addrmatch && rob_we;
    // 为了不影响commit指令更新arf的busy位，添加irq_flush条件
    assign prmiss = ~addrmatch && rob_we; 
 
+   assign ebreak_req = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_EBREAK) && busy;
    assign ecall  = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_ECALL) && rob_we;
-   assign ebreak = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_EBREAK) && rob_we;
+   assign ebreak = ebreak_req && rob_we;
 
    assign result = pc + 4;
    assign jmpaddr = brcond ? jmpaddr_taken : (pc + 4);

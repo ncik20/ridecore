@@ -80,6 +80,9 @@ module rc #(
    wire [4*`DATA_LEN-1:0]   l2_mem_wdata;
    wire [4*`DATA_LEN-1:0]   l2_mem_data;
    wire                     l2_mem_done;
+   wire                     l2_clean_addr_start;
+   wire [`ADDR_LEN-1:0]     l2_clean_addr;
+   wire                     l2_clean_addr_done;
    wire [1:0]               ram_mem_we;
    wire [`ADDR_LEN-1:0]     ram_mem_addr;
    wire [15:0]              ram_mem_byteenable;
@@ -380,6 +383,9 @@ module rc #(
 
       .icache_done(icache_done[0] | dbg_i_rsp_done),
       .icache_busy(icache_busy | dbg_i_busy),
+      .l2_clean_addr_start(l2_clean_addr_start),
+      .l2_clean_addr(l2_clean_addr),
+      .l2_clean_addr_done(l2_clean_addr_done),
 
       .dbg_haltreq(dbg_debug_req),
       .dbg_entry_pc(DEBUG_ROM_ENTRY),
@@ -507,7 +513,10 @@ module rc #(
         .invalidate_addr(il1_invalidate_addr),
         .invalidate_all(1'b0),
         .clean_start(1'b0),
+        .clean_addr_start(1'b0),
+        .clean_addr(32'h0),
         .clean_done(),
+        .clean_addr_done(),
 
         .mem_data_data(imem_data),
         .mem_data_ready(imem_done),
@@ -541,6 +550,10 @@ module rc #(
       .d_req_rw(dmem_we),
       .d_rsp_data(dmem_data),
       .d_rsp_done(dmem_done),
+
+      .clean_addr_start(l2_clean_addr_start),
+      .clean_addr(l2_clean_addr),
+      .clean_addr_done(l2_clean_addr_done),
 
       .i_invalidate_valid(il1_invalidate_valid),
       .i_invalidate_addr(il1_invalidate_addr),

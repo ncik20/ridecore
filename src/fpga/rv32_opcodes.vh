@@ -68,6 +68,8 @@
 // MISC-MEM FUNCT3 encodings
 `define RV32_FUNCT3_FENCE   0
 `define RV32_FUNCT3_FENCE_I 1
+`define RV32_FUNCT3_CBO     2
+`define RV32_FUNCT12_CBO_CLEAN 12'b000000000001
 
 // SYSTEM FUNCT3 encodings
 
