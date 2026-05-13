@@ -174,7 +174,8 @@ module decoder(
                     `RV32_FUNCT12_ECALL,
                     `RV32_FUNCT12_EBREAK,
                     `RV32_FUNCT12_SRET,
-                    `RV32_FUNCT12_MRET : begin
+                    `RV32_FUNCT12_MRET,
+                    `RV32_FUNCT12_DRET : begin
                     // `RV32_FUNCT12_WFI : begin
                         uses_rs1 = 1'b0;
                     end

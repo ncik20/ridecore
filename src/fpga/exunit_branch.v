@@ -20,6 +20,9 @@ module exunit_branch
    input wire 			  issue,
    input wire [`ADDR_LEN-1:0] 	  mtvec,
    input wire [`ADDR_LEN-1:0] 	  mepc,
+   input wire [`ADDR_LEN-1:0] 	  dpc,
+   input wire                     dbg_mode,
+   input wire [`ADDR_LEN-1:0] 	  dbg_entry_pc,
    output wire [`DATA_LEN-1:0] 	  result,
    output wire 			  rrf_we,
    output wire 			  rob_we, //set finish
@@ -49,7 +52,9 @@ module exunit_branch
 
    assign result = pc + 4;
    assign jmpaddr = brcond ? jmpaddr_taken : (pc + 4);
-   assign jmpaddr_taken = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_MRET) ? mepc :
+   assign jmpaddr_taken = (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_DRET) ? dpc :
+                          (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_MRET) ? mepc :
+                          (opcode == `RV32_SYSTEM && imm[11:0] == `RV32_FUNCT12_EBREAK && dbg_mode) ? dbg_entry_pc :
                           (opcode == `RV32_SYSTEM) ? {mtvec[31:2], 2'b0} :
                           (((opcode == `RV32_JALR) ? ex_src1 : pc) + imm);
    

@@ -5,6 +5,7 @@ module exunit_csr
    input wire 			            clk,
    input wire 			            reset,
    input wire                       irq_flush,
+   input wire                       dbg_flush,
    input wire [`DATA_LEN-1:0] 	    ex_src1,
    input wire [`DATA_LEN-1:0] 	    imm,
    input wire 			            dstval,
@@ -17,6 +18,7 @@ module exunit_csr
    input wire 			            retcommit,
    input wire [`SPECTAG_LEN-1:0]    spectagfix,
    input wire [`ADDR_LEN-1:0] 	    irq_jmpaddr,
+   input wire [`ADDR_LEN-1:0] 	    dbg_jmpaddr,
    output wire [`DATA_LEN-1:0] 	    result,
    output wire 			            rrf_we,
    output wire 			            rob_we, //set finish
@@ -31,6 +33,7 @@ module exunit_csr
    output reg [`DATA_LEN-1:0]       mie,
    output reg [`DATA_LEN-1:0]       mtvec,
    output reg [`DATA_LEN-1:0]       mepc,
+   output wire [`DATA_LEN-1:0]      dpc_o,
    output wire                      mstatus_mie
    );
 
@@ -43,6 +46,11 @@ module exunit_csr
    reg  [`DATA_LEN-1:0] mcause;      //0x342
    reg  [`DATA_LEN-1:0] mip;         //0x344
 
+   reg  [`DATA_LEN-1:0] dcsr;        //0x7B0
+   reg  [`DATA_LEN-1:0] dpc;         //0x7B1
+   reg  [`DATA_LEN-1:0] dscratch0;   //0x7B2
+   reg  [`DATA_LEN-1:0] dscratch1;   //0x7B3
+
    wire [30:0] mcause1 = (eirq && mie[11]) ? 31'd11 :
                          (tirq && mie[7 ]) ? 31'd7  :
                          (sirq && mie[3 ]) ? 31'd3  : 31'd0;
@@ -51,15 +59,20 @@ module exunit_csr
    assign rrf_we = busy & dstval;
    assign kill_speculative = ((spectag & spectagfix) != 0) && specbit && prmiss;
    assign result = (csr_op == `CSR_WRITE_NOREAD) ? 0 :
-       (imm[11:0] == 12'hf14) ? mhartid :
-       (imm[11:0] == 12'h300) ? mstatus :
-       (imm[11:0] == 12'h304) ? mie     :
-       (imm[11:0] == 12'h305) ? mtvec   :
-       (imm[11:0] == 12'h341) ? mepc    :
-       (imm[11:0] == 12'h342) ? mcause  :
-       (imm[11:0] == 12'h344) ? mip     : 0;
+       (imm[11:0] == 12'hf14) ? mhartid     :
+       (imm[11:0] == 12'h300) ? mstatus     :
+       (imm[11:0] == 12'h304) ? mie         :
+       (imm[11:0] == 12'h305) ? mtvec       :
+       (imm[11:0] == 12'h341) ? mepc        :
+       (imm[11:0] == 12'h342) ? mcause      :
+       (imm[11:0] == 12'h304) ? mip         :
+       (imm[11:0] == 12'h7B0) ? dcsr        :
+       (imm[11:0] == 12'h7B1) ? dpc         :
+       (imm[11:0] == 12'h7B2) ? dscratch0   :
+       (imm[11:0] == 12'h7B3) ? dscratch1   : 0;
 
    assign mstatus_mie = mstatus[3];
+   assign dpc_o = dpc;
 
    always @ (posedge clk) begin
       if (reset) begin
@@ -68,6 +81,10 @@ module exunit_csr
          mstatus <= 0;
          mie <= 0;
          mip <= 0;
+         dcsr <= 0;
+         dpc <= 0;
+         dscratch0 <= 0;
+         dscratch1 <= 0;
       end else begin
          busy <= issue;
 
@@ -87,6 +104,11 @@ module exunit_csr
                 12'h305 : mtvec     <= ex_src1;
                 12'h341 : mepc      <= ex_src1;
                 12'h344 : mip       <= ex_src1;
+
+                12'h7B0 : dcsr      <= ex_src1;
+                12'h7B1 : dpc       <= ex_src1;
+                12'h7B2 : dscratch0 <= ex_src1;
+                12'h7B3 : dscratch1 <= ex_src1;
             endcase
         end
         `CSR_SET : begin
@@ -95,6 +117,11 @@ module exunit_csr
                 12'h304 : mie       <= mie       | ex_src1;
                 12'h305 : mtvec     <= mtvec     | ex_src1;
                 12'h344 : mip       <= mip       | ex_src1;
+
+                12'h7B0 : dcsr      <= dcsr      | ex_src1;
+                12'h7B1 : dpc       <= dpc       | ex_src1;
+                12'h7B2 : dscratch0 <= dscratch0 | ex_src1;
+                12'h7B3 : dscratch1 <= dscratch1 | ex_src1;
             endcase
         end
         `CSR_CLEAR : begin
@@ -103,6 +130,11 @@ module exunit_csr
                 12'h304 : mie       <= mie       & ~ex_src1;
                 12'h305 : mtvec     <= mtvec     & ~ex_src1;
                 12'h344 : mip       <= mip       & ~ex_src1;
+
+                12'h7B0 : dcsr      <= dcsr      & ~ex_src1;
+                12'h7B1 : dpc       <= dpc       & ~ex_src1;
+                12'h7B2 : dscratch0 <= dscratch0 & ~ex_src1;
+                12'h7B3 : dscratch1 <= dscratch1 & ~ex_src1;
             endcase
         end
       endcase
@@ -116,6 +148,11 @@ module exunit_csr
         mstatus[7] <= mstatus_mie;
         mcause[31] <= 1'b1;
         mcause[30:0] <= mcause1;
+      end
+
+      if (dbg_flush) begin
+        dpc <= dbg_jmpaddr;
+        dcsr[8:6] <= 3'd3;
       end
 
       if (ecall || ebreak) begin

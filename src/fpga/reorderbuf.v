@@ -10,7 +10,7 @@ module reorderbuf
    input wire [`RRF_SEL-1:0] 	  dp1_addr,
    input wire [`ADDR_LEN-1:0] 	  pc_dp1,
    input wire 			  storebit_dp1,
-   input wire [2:0]  	  csrbit_dp1,
+   input wire [3:0]  	  csrbit_dp1,
    input wire 			  dstvalid_dp1,
    input wire [`REG_SEL-1:0] 	  dst_dp1,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp1,
@@ -20,7 +20,7 @@ module reorderbuf
    input wire [`RRF_SEL-1:0] 	  dp2_addr,
    input wire [`ADDR_LEN-1:0] 	  pc_dp2,
    input wire 			  storebit_dp2,
-   input wire [2:0]		  csrbit_dp2,
+   input wire [3:0]		  csrbit_dp2,
    input wire 			  dstvalid_dp2,
    input wire [`REG_SEL-1:0] 	  dst_dp2,
    input wire [`GSH_BHR_LEN-1:0]  bhr_dp2,
@@ -47,6 +47,7 @@ module reorderbuf
    output wire 			          stcommit,
    output wire 			          csrcommit,
    output wire                    retcommit,
+   output wire                    dretcommit,
    output wire 			          arfwe1,
    output wire 			          arfwe2,
    output wire [`REG_SEL-1:0] 	  dstarf1,
@@ -85,14 +86,14 @@ module reorderbuf
    wire [`ADDR_LEN-1:0] 	  jmpaddr1;
    wire [`REG_SEL-1:0] 		  dst1;
    wire [`GSH_BHR_LEN-1:0] 	  bhr1;
-   wire [2:0]         		  csrbit1;
+   wire [3:0]         		  csrbit1;
 
    wire [`ADDR_LEN-1:0] 	  inst_pc2;
    wire [11:0]         		  instype2;
    wire [`ADDR_LEN-1:0] 	  jmpaddr2;
    wire [`REG_SEL-1:0] 		  dst2;
    wire [`GSH_BHR_LEN-1:0] 	  bhr2;
-   wire [2:0]         		  csrbit2;
+   wire [3:0]         		  csrbit2;
 
    reg                        arfwe1_latch;
    reg                        arfwe2_latch;
@@ -222,15 +223,16 @@ module reorderbuf
 */
    assign comnum = {1'b0, commit1_latch} + {1'b0, commit2_latch};
    assign stcommit = stcommit_latch && nocom;
-   assign csrcommit = ((commit1_latch && (csrbit1[2:1] == 2'b11)) ||
-		               (commit2_latch && (csrbit2[2:1] == 2'b11))) && nocom;
-   assign pc_comcsr = (commit1_latch && (csrbit1[2:1] == 2'b11)) ? inst_pc1 : inst_pc2;
+   assign csrcommit = ((commit1_latch && csrbit1[3] && !csrbit1[2]) ||
+		               (commit2_latch && csrbit2[3] && !csrbit2[2])) && nocom;
+   assign pc_comcsr = (commit1_latch && csrbit1[3] && !csrbit1[2]) ? inst_pc1 : inst_pc2;
    assign arfwe1 = arfwe1_latch && nocom;
    assign arfwe2 = arfwe2_latch && nocom;
    // assign dstarf1 = dst[comptr];
    // assign dstarf2 = dst[comptr2];
    assign combranch = combranch_latch && nocom;
-   assign retcommit = combranch && ((csrbit1 == 3'b101) || (csrbit2 == 3'b101));
+   assign retcommit = combranch && ((csrbit1 == 4'b1110) || (csrbit2 == 4'b1110));
+   assign dretcommit = combranch && ((csrbit1 == 4'b1101) || (csrbit2 == 4'b1101));
    assign pc_combranch = combranch1_latch ? inst_pc1 : inst_pc2;
    assign bhr_combranch = combranch1_latch ? bhr1 : bhr2;
    // assign brcond_combranch = combranch1 ? brcond[comptr] : brcond[comptr2];
@@ -398,7 +400,7 @@ module reorderbuf
 
    ram_sync_2r2w_2bank #(
     .BRAM_ADDR_WIDTH    (`RRF_SEL),
-	.BRAM_DATA_WIDTH    (3),
+	.BRAM_DATA_WIDTH    (4),
 	.DATA_DEPTH         (`RRF_NUM)
    ) csrbit (
     .clk                (clk),

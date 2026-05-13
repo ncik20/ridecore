@@ -31,6 +31,9 @@ module pipeline
    input wire                       icache_done,
    input wire                       icache_busy,
 
+   input wire                       dbg_haltreq,
+   input wire  [`ADDR_LEN-1:0]      dbg_entry_pc,
+
    input wire                       eirq,
    input wire                       tirq,
    input wire                       sirq
@@ -561,6 +564,7 @@ module pipeline
    wire 		   stcommit;
    wire 		   csrcommit;
    wire            retcommit;
+   wire            dretcommit;
    wire 		   arfwe1;
    wire 		   arfwe2;
    wire [`REG_SEL-1:0] 	   dstarf1;
@@ -602,18 +606,29 @@ module pipeline
     wire [`ADDR_LEN-1:0]        ldaddr_ex;
 
     wire                        irq_flush;
+    wire                        dbg_take;
+    wire                        dbg_enter;
+    wire                        pipe_flush;
+    wire                        debug_stop;
+    wire                        dbg_halt_new;
+    reg                         dbg_wait_debug_entry;
+    reg                         dbg_in_debug_mode;
+    reg [`ADDR_LEN-1:0]         dbg_dpc_latch;
     wire [`ADDR_LEN-1:0]        mepc;
+    wire [`ADDR_LEN-1:0]        dpc;
     wire [`ADDR_LEN-1:0]        mie;
     wire [`ADDR_LEN-1:0]        mtvec;
     wire                        mstatus_mie;
 	 
 	wire                        system_ins1;
 	wire                        system_ins_priv1;
-	wire                        system_ins_priv_ret1;
+	wire                        system_ins_priv_mret1;
+	wire                        system_ins_priv_dret1;
 	 
 	wire                        system_ins2;
 	wire                        system_ins_priv2;
-	wire                        system_ins_priv_ret2;
+	wire                        system_ins_priv_mret2;
+	wire                        system_ins_priv_dret2;
 
     wire [1:0]                  hit_staddr_off;
 
@@ -659,35 +674,67 @@ module pipeline
    assign irq_flush = icache_req_ok & mstatus_mie & (
        (mie[11] & eirq) || (mie[7] & tirq) || (mie[3] & sirq));
 
+   assign dbg_halt_new = dbg_haltreq & !dbg_in_debug_mode & !dbg_wait_debug_entry;
+   assign dbg_take = dbg_halt_new;
+   assign dbg_enter = dbg_wait_debug_entry & sb_empty & icache_req_ok;
+   assign pipe_flush = irq_flush | dbg_take;
+   assign debug_stop = dbg_halt_new | dbg_wait_debug_entry | dbg_enter;
+
    assign fence_i_flush = fence_i & fence_done;
 
-   assign kill_IF = prmiss | irq_flush | csr_flush | fence_i_flush;
+   assign kill_IF = prmiss | pipe_flush | debug_stop | csr_flush | fence_i_flush;
    assign kill_icache_req = kill_IF;
 
    assign system_ins1 = (inst1_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-   assign system_ins_priv1 = |(inst1_id[14:12]);
-   assign system_ins_priv_ret1 = (inst1_id[31:20] == `RV32_FUNCT12_MRET) ? 1'b1 : 1'b0;
+   assign system_ins_priv1 = (inst1_id[14:12] == `RV32_FUNCT3_PRIV) ? 1'b1 : 1'b0;
+   assign system_ins_priv_mret1 = (inst1_id[31:20] == `RV32_FUNCT12_MRET) ? 1'b1 : 1'b0;
+   assign system_ins_priv_dret1 = (inst1_id[31:20] == `RV32_FUNCT12_DRET) ? 1'b1 : 1'b0;
 
    assign system_ins2 = (inst2_id[6:0] == `RV32_SYSTEM) ? 1'b1 : 1'b0;
-   assign system_ins_priv2 = |(inst2_id[14:12]);
-   assign system_ins_priv_ret2 = (inst2_id[31:20] == `RV32_FUNCT12_MRET) ? 1'b1 : 1'b0;
+   assign system_ins_priv2 = (inst2_id[14:12] == `RV32_FUNCT3_PRIV) ? 1'b1 : 1'b0;
+   assign system_ins_priv_mret2 = (inst2_id[31:20] == `RV32_FUNCT12_MRET) ? 1'b1 : 1'b0;
+   assign system_ins_priv_dret2 = (inst2_id[31:20] == `RV32_FUNCT12_DRET) ? 1'b1 : 1'b0;
 
    assign icache_req = (icache_req_ok && ~full && ~kill_IF) ? 1'b1 : 1'b0;
 
-   assign csr_flush = iscsr_w & csrcommit;
+   assign csr_flush = iscsr_w & (csrcommit | dretcommit);
+
+   always @ (posedge clk) begin
+      if (reset) begin
+         dbg_wait_debug_entry <= 1'b0;
+         dbg_in_debug_mode <= 1'b0;
+         dbg_dpc_latch <= 0;
+      end else begin
+         if (dbg_take) begin
+            dbg_wait_debug_entry <= 1'b1;
+            dbg_dpc_latch <= irq_jmpaddr;
+         end
+
+         if (dbg_enter) begin
+            dbg_wait_debug_entry <= 1'b0;
+            dbg_in_debug_mode <= 1'b1;
+         end
+
+         if (dretcommit) begin
+            dbg_in_debug_mode <= 1'b0;
+         end
+      end
+   end
 
    always @ (posedge clk) begin
 
       if (reset) begin
 		 pc <= `ENTRY_POINT;
+      end else if (dbg_enter) begin
+         pc <= dbg_entry_pc;
       end else if (irq_flush) begin
          pc <= {mtvec[31:2], 2'b0};
+      end else if (prmiss) begin
+		 pc <= jmpaddr;
       end else if (csr_flush) begin
          pc <= pc_comcsr + 4;
       end else if (fence_i_flush) begin
          pc <= fence_i_next_pc;
-      end else if (prmiss) begin
-		 pc <= jmpaddr;
       end else if (~icache_req) begin
          pc <= pc;
       end else begin
@@ -835,7 +882,7 @@ module pipeline
 
    //ID Stage********************************************************
    assign stall_ID = ~attachable | prsuccess;
-   assign kill_ID = (stall_ID & ~stall_DP) | prmiss | irq_flush;
+   assign kill_ID = (stall_ID & ~stall_DP) | prmiss | pipe_flush | debug_stop;
 
    assign isfence1 = (~inv1_if && (inst1_if[6:0] == `RV32_MISC_MEM)) ?
 		      1'b1 : 1'b0;
@@ -869,13 +916,15 @@ module pipeline
    assign comptr_ = (~prmiss && comnum > 1) ? comptr2 :
                     (~prmiss && comnum > 0) ? comptr : comptr - 1;
 
-   assign all_commit = ((buf_rrftag_alu1 == comptr_ + 1 &&
+   wire [`RRF_SEL-1:0] fence_commit_tag = comptr_ + {{(`RRF_SEL-1){1'b0}}, 1'b1};
+
+   assign all_commit = ((buf_rrftag_alu1 == fence_commit_tag &&
        (buf_alu_op_alu1 == `FENCE || buf_alu_op_alu1 == `FENCE_I))
-   || (buf_rrftag_alu2 == comptr_ + 1 &&
+   || (buf_rrftag_alu2 == fence_commit_tag &&
        (buf_alu_op_alu2 == `FENCE || buf_alu_op_alu2 == `FENCE_I))) ? 1'b1 : 1'b0;
 
-   assign all_commit_fence_i = ((buf_rrftag_alu1 == comptr_ + 1 && buf_alu_op_alu1 == `FENCE_I)
-   || (buf_rrftag_alu2 == comptr_ + 1 && buf_alu_op_alu2 == `FENCE_I)) ? 1'b1 : 1'b0;
+   assign all_commit_fence_i = ((buf_rrftag_alu1 == fence_commit_tag && buf_alu_op_alu1 == `FENCE_I)
+   || (buf_rrftag_alu2 == fence_commit_tag && buf_alu_op_alu2 == `FENCE_I)) ? 1'b1 : 1'b0;
 
    assign dcache_clean_start = all_commit_fence_i & sb_empty & dcache_idle & ~mmio_busy &
                                ~fence_i_clean_started;
@@ -933,7 +982,7 @@ module pipeline
    tag_generator taggen(
 			.clk(clk),
 			.reset(reset),
-            .irq_flush(irq_flush),
+            .irq_flush(pipe_flush),
 			.branchvalid1(isbranch1),
             // .branchvalid2(branchvalid2),
 			.branchvalid2(isbranch2),
@@ -1162,7 +1211,7 @@ module pipeline
 		     // ~allocatable_mul | 
              ~allocatable_branch | ~allocatable_csr | ~alloc_rrf | prsuccess;
 
-   assign kill_DP = prmiss | irq_flush;
+   assign kill_DP = prmiss | pipe_flush | debug_stop;
    
    sourceoperand_manager sopm1_1(
 				 .arfdata(adat1_1),
@@ -1219,7 +1268,7 @@ module pipeline
    rrf_freelistmanager rrf_fl(
 			      .clk(clk),
 			      .reset(reset),
-                  .irq_flush(irq_flush),
+                  .irq_flush(pipe_flush),
 			      .invalid1(inv1_id),
 			      .invalid2(inv2_id),
 			      .comnum(comnum),
@@ -1238,7 +1287,7 @@ module pipeline
    arf aregfile(
 		.clk(clk),
 		.reset(reset),
-        .irq_flush(irq_flush),
+        .irq_flush(pipe_flush),
 		.rs1_1(rs1_1_id),
 		.rs2_1(rs2_1_id),
 		.rs1_2(rs1_2_id),
@@ -1292,7 +1341,7 @@ module pipeline
    rrf rregfile(
 		.clk(clk),
 		.reset(reset),
-        .irq_flush(irq_flush),
+        .irq_flush(pipe_flush),
 		.rs1_1tag(rs1_1tag),
 		.rs2_1tag(rs2_1tag),
 		.rs1_2tag(rs1_2tag),
@@ -1500,8 +1549,8 @@ module pipeline
 		       ready_alu2[1],ready_alu1[1],ready_alu2[0],ready_alu1[0]
 		       };
 
-   assign 		   issue_alu1 = ~prmiss & ~irq_flush & issuevalid_alu1;
-   assign 		   issue_alu2 = ~prmiss & ~irq_flush & issuevalid_alu2;
+   assign 		   issue_alu1 = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_alu1;
+   assign 		   issue_alu2 = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_alu2;
  
    allocateunit #(2*`ALU_ENT_NUM, `ALU_ENT_SEL+1) alloc_alu(
 							    .busy(busyvec_alu), //RS_BUSY
@@ -1560,7 +1609,7 @@ module pipeline
 		      //System
 		      .clk(clk),
 		      .reset(reset),
-              .irq_flush(irq_flush),
+              .irq_flush(pipe_flush),
 		      .busyvec(busyvec_alu1),
 		      .prmiss(prmiss),
 		      .prsuccess(prsuccess),
@@ -1643,7 +1692,7 @@ module pipeline
 		      //System
 		      .clk(clk),
 		      .reset(reset),
-              .irq_flush(irq_flush),
+              .irq_flush(pipe_flush),
 		      .busyvec(busyvec_alu2),
 		      .prmiss(prmiss),
 		      .prsuccess(prsuccess),
@@ -1724,13 +1773,13 @@ module pipeline
 
 
    assign allocent2_ldst = allocent1_ldst + 1;
-   assign issue_ldst = ~prmiss & ~irq_flush & issuevalid_ldst;
+   assign issue_ldst = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_ldst;
 
    alloc_issue_ino #(`LDST_ENT_SEL, `LDST_ENT_NUM) ai_ldst
      (
       .clk(clk),
       .reset(reset),
-      .irq_flush(irq_flush),
+      .irq_flush(pipe_flush),
       .reqnum(req_ldstnum),
       .busyvec(busyvec_ldst),
       .prbusyvec_next(prbusyvec_next_ldst),
@@ -1749,7 +1798,7 @@ module pipeline
 		       //System
 		       .clk(clk),
 		       .reset(reset),
-               .irq_flush(irq_flush),
+               .irq_flush(pipe_flush),
 		       .busyvec(busyvec_ldst),
 		       .prmiss(prmiss),
 		       .prsuccess(prsuccess),
@@ -1821,12 +1870,12 @@ module pipeline
 
 
    assign allocent2_branch = allocent1_branch + 1;
-   assign issue_branch = ~prmiss & ~irq_flush & issuevalid_branch;
+   assign issue_branch = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_branch;
    
    alloc_issue_ino #(`BRANCH_ENT_SEL, `BRANCH_ENT_NUM) ai_branch(
 			     .clk(clk),
 			     .reset(reset),
-                 .irq_flush(irq_flush),
+                 .irq_flush(pipe_flush),
 			     .reqnum(req_branchnum),
 			     .busyvec(busyvec_branch),
 			     .prbusyvec_next(prbusyvec_next_branch),
@@ -1845,7 +1894,7 @@ module pipeline
 			   //System
 			   .clk(clk),
 			   .reset(reset),
-               .irq_flush(irq_flush),
+               .irq_flush(pipe_flush),
 			   .busyvec(busyvec_branch),
 			   .prmiss(prmiss),
 			   .prsuccess(prsuccess),
@@ -1930,7 +1979,7 @@ module pipeline
 			   .kill_spec6(kill_speculative_csr | ~robwe_csr)
 			   );
 /*
-   assign issue_mul = ~prmiss & ~irq_flush & issuevalid_mul;
+   assign issue_mul = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_mul;
 
    allocateunit #(`MUL_ENT_NUM, `MUL_ENT_SEL) alloc_mul(
 							.busy(busyvec_mul), //RS_BUSY
@@ -1952,7 +2001,7 @@ module pipeline
 		     //System
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
+             .irq_flush(pipe_flush),
 		     .busyvec(busyvec_mul),
 		     .prmiss(prmiss),
 		     .prsuccess(prsuccess),
@@ -2022,13 +2071,13 @@ module pipeline
 		     );
 */
    assign allocent2_csr = allocent1_csr + 1;
-   assign issue_csr = ~prmiss & ~irq_flush & issuevalid_csr;
+   assign issue_csr = ~prmiss & ~irq_flush & ~debug_stop & issuevalid_csr;
 
    alloc_issue_ino #(`CSR_ENT_SEL, `CSR_ENT_NUM) ai_csr
      (
       .clk(clk),
       .reset(reset),
-      .irq_flush(irq_flush),
+      .irq_flush(pipe_flush),
       .reqnum(req_csrnum),
       .busyvec(busyvec_csr),
       .prbusyvec_next(prbusyvec_next_csr),
@@ -2047,7 +2096,7 @@ module pipeline
 		       //System
 		       .clk(clk),
 		       .reset(reset),
-               .irq_flush(irq_flush),
+               .irq_flush(pipe_flush),
 		       .busyvec(busyvec_csr),
 		       .prmiss(prmiss),
 		       .prsuccess(prsuccess),
@@ -2142,7 +2191,7 @@ module pipeline
    exunit_alu byakko(
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
+             .irq_flush(pipe_flush),
 		     .ex_src1(buf_ex_src1_alu1),
 		     .ex_src2(buf_ex_src2_alu1),
 		     .pc(buf_pc_alu1),
@@ -2194,7 +2243,7 @@ module pipeline
    exunit_alu suzaku(
 		     .clk(clk),
 		     .reset(reset),
-             .irq_flush(irq_flush),
+             .irq_flush(pipe_flush),
 		     .ex_src1(buf_ex_src1_alu2),
 		     .ex_src2(buf_ex_src2_alu2),
 		     .pc(buf_pc_alu2),
@@ -2402,7 +2451,7 @@ module pipeline
      (
       .clk(clk),
       .reset(reset),
-      .irq_flush(irq_flush),
+      .irq_flush(pipe_flush),
       .prsuccess(prsuccess),
       .prmiss(prmiss),
       .prtag(buf_spectag_branch),
@@ -2433,7 +2482,7 @@ module pipeline
    exunit_ldst seiryu(
 		      .clk(clk),
 		      .reset(reset),
-              .irq_flush(irq_flush),
+              .irq_flush(pipe_flush),
 		      .ex_src1(buf_ex_src1_ldst),
 		      .ex_src2(buf_ex_src2_ldst),
 		      .pc(buf_pc_ldst),
@@ -2539,6 +2588,7 @@ module pipeline
 		     .clk(clk),
 		     .reset(reset),
              .irq_flush(irq_flush),
+             .dbg_flush(dbg_enter),
 		     .ex_src1(buf_ex_src1_csr),
 		     .imm(buf_imm_csr),
 		     .dstval(buf_dstval_csr),
@@ -2551,6 +2601,7 @@ module pipeline
              .retcommit(retcommit),
 		     .spectagfix(spectagfix),
              .irq_jmpaddr(irq_jmpaddr),
+             .dbg_jmpaddr(dbg_dpc_latch),
 		     .result(result_csr),
 		     .rrf_we(rrfwe_csr),
 		     .rob_we(robwe_csr),
@@ -2565,6 +2616,7 @@ module pipeline
              .mie(mie),
              .mtvec(mtvec),
              .mepc(mepc),
+             .dpc_o(dpc),
              .mstatus_mie(mstatus_mie)
 		     );
 
@@ -2601,7 +2653,7 @@ module pipeline
    exunit_branch kirin(
 		       .clk(clk),
 		       .reset(reset),
-               .irq_flush(irq_flush),
+               .irq_flush(pipe_flush),
 		       .ex_src1(buf_ex_src1_branch),
 		       .ex_src2(buf_ex_src2_branch),
 		       .pc(buf_pc_branch),
@@ -2615,6 +2667,9 @@ module pipeline
 		       .issue(issue_branch),
                .mtvec(mtvec),
                .mepc(mepc),
+               .dpc(dpc),
+               .dbg_mode(dbg_in_debug_mode),
+               .dbg_entry_pc(dbg_entry_pc),
 		       .result(result_branch),
 		       .rrf_we(rrfwe_branch),
 		       .rob_we(robwe_branch),
@@ -2631,7 +2686,7 @@ module pipeline
    miss_prediction_fix_table mpft(
 				  .clk(clk),
 				  .reset(reset),
-                  .irq_flush(irq_flush),
+                  .irq_flush(pipe_flush),
 				  .mpft_valid(mpft_valid),
 				  .value_addr(buf_spectag_branch),
 				  .mpft_value(spectagfix),
@@ -2649,12 +2704,12 @@ module pipeline
    reorderbuf rob(
 		  .clk(clk),
 		  .reset(reset),
-          .irq_flush(irq_flush),
+          .irq_flush(pipe_flush),
 		  .dp1(~stall_DP & ~kill_DP & ~inv1_id),
 		  .dp1_addr(dst1_renamed),
 		  .pc_dp1(pc1_id),
 		  .storebit_dp1(inst1_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp1({system_ins1, system_ins_priv1, system_ins_priv_ret1}),
+		  .csrbit_dp1({system_ins1, system_ins_priv1, system_ins_priv_mret1, system_ins_priv_dret1}),
 		  .dstvalid_dp1(wr_reg_1_id),
 		  .dst_dp1(rd_1_id),
 		  .bhr_dp1(bhr1_id),
@@ -2664,7 +2719,7 @@ module pipeline
 		  .dp2_addr(dst2_renamed),
 		  .pc_dp2(pc2_id),
 		  .storebit_dp2(inst2_id[6:0] == `RV32_STORE ? 1'b1 : 1'b0),
-		  .csrbit_dp2({system_ins2, system_ins_priv2, system_ins_priv_ret2}),
+		  .csrbit_dp2({system_ins2, system_ins_priv2, system_ins_priv_mret2, system_ins_priv_dret2}),
 		  .dstvalid_dp2(wr_reg_2_id),
 		  .dst_dp2(rd_2_id),
 		  .bhr_dp2(bhr2_id),
@@ -2691,6 +2746,7 @@ module pipeline
 		  .stcommit(stcommit),
           .csrcommit(csrcommit),
           .retcommit(retcommit),
+          .dretcommit(dretcommit),
 		  .arfwe1(arfwe1),
 		  .arfwe2(arfwe2),
 		  .dstarf1(dstarf1),
